@@ -1,5 +1,5 @@
 
-@enum PRUNED optimality infeasibility dominance none
+@enum Pruned optimality infeasibility dominance none
 
 struct Problem
 	nbVar::Int
