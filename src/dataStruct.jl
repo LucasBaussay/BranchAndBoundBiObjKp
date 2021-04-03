@@ -15,7 +15,7 @@ mutable struct Solution
 	w::Float64
 end
 
-struct Assignment
+mutable struct Assignment
 	assign::Array{Float64, 1}
 	profit::Float64
 	weight::Float64
