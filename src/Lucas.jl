@@ -47,27 +47,27 @@ function computeUpperBound(lowerBound::Vector{Solution})
 end
 
 function addVarAssignment!(assignment::Assignment, prob::Problem)
-	assignment.indEndAssign += 1
-	assignment.assign[assignment.indEndAssign] = 1
+	assignment.assignEndIndex += 1
+	assignment.assign[assignment.assignEndIndex] = 1
 	
-	assignment.weight += prob.weights[assignment.indEndAssign]
-	assignment.profit += prob.profits[1:end, assignment.indEndAssign]
+	assignment.weight += prob.weights[assignment.assignEndIndex]
+	assignment.profit += prob.profits[1:end, assignment.assignEndIndex]
 end
 
 function removeVarAssignment!(assignment::Assignment, prob::Problem, testAddVar::Bool)
 	if !testAddVar
-		assignment.indEndAssign += 1
+		assignment.assignEndIndex += 1
 	else
-		assignment.weight -= prob.weights[assignment.indEndAssign]
-		assignment.profit -= prob.profits[1:end, assignment.indEndAssign]
+		assignment.weight -= prob.weights[assignment.assignEndIndex]
+		assignment.profit -= prob.profits[1:end, assignment.assignEndIndex]
 	end
 	
-	assignment.assign[assignment.indEndAssign] = 0
+	assignment.assign[assignment.assignEndIndex] = 0
 end
 
 function returnParentAssignment!(assignment::Assignment, prob::Problem)
-	assignment.assign[assignment.indEndAssign] = -1
-	assignment.indEndAssign -= 1
+	assignment.assign[assignment.assignEndIndex] = -1
+	assignment.assignEndIndex -= 1
 end
 
 function branchAndBound!(lowerBound::Vector{Solution}, assignment::Assignment, nadirPointsToStudy::Vector{PairOfSolution}; M::Int = 1000)
@@ -81,8 +81,8 @@ function branchAndBound!(lowerBound::Vector{Solution}, assignment::Assignment, n
 		updateLowerBound!(lowerBound, newNadirPoints, subLowerBound) #Jules
 	end
 	
-	if prunedType == none && assignment.indEndAssign < prob.nbVar
-		testAddVar = (assignment.weight + prob.weights[assignment.indEndAssign] <= prob.maxWeight)
+	if prunedType == none && assignment.assignEndIndex < prob.nbVar
+		testAddVar = (assignment.weight + prob.weights[assignment.assignEndIndex] <= prob.maxWeight)
 		
 		if testAddVar
 			addVarAssignment!(assignment, prob) #Lucas
