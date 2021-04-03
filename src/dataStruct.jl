@@ -22,7 +22,7 @@ struct Assignment
 	assignEndIndex:: Int
 end
 
-struct PairOfSolution
+struct PairOfSolutions
 	sol1::Solution
 	sol2::Solution
 end
