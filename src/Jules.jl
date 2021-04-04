@@ -143,16 +143,26 @@ function updateLowerBound(LB::Vector{Solution}, nadirPoints::Vector{PairOfSoluti
     end
     # modify LB and nadirPoints in consequence
     decay = 0
+    itStart = 0
+    itEnd = 0
     for i in 1:length(subLB)
         if indFirstDominated[i] > 0
-            replaceSolByOtherSol(LB[indFirstDominated[i]],subLB[i])
-        elseif indFirstNotDominated[i] - indFirstDominated[i] > 0
-            while indFirstNotDominated[i] <= length(LB)
-            for k in indFirstDominated[i]:indFirstNotDominated[i]
-
-                replaceSolByOtherSol(LB[indFirstDominated[i]+1], subLB[i])
-
+            replaceSolByOtherSol(LB[indFirstDominated[i]-decay],subLB[i])
+        elseif indFirstNotDominated[i] - indFirstDominated[i] > 1
+            itStart = indFirstDominated[i]+1 # 3
+            itEnd = indFirstNotDominated[i] # 5
+            for k in 1:(indFirstNotDominated[i]-indFirstDominated[i]-1) # 1:2 (deux it)
+                if itEnd <= length(LB)
+                    replaceSolByOtherSol(LB[itStart-decay], LB[itEnd]) # LB[3] <- LB[5], LB[4] <- LB[6]
+                    itStart += 1
+                    itEnd += 1
+                end
+                decay += 1
             end
         end
+    end
+
+    for i in 1:decay
+        pop!(LB)
     end
 end
