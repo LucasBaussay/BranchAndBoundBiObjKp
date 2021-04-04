@@ -125,7 +125,6 @@ function pruningTest(lengthSubLB::Int, listPointsNadir::Vector{PairOfSolution}, 
 		nadir = [pairNadir.solL.y[1], pairNadir.solR.y[2]]
 		nadirA = subUpperBound.A * nadir
 
-
 		iter = 1
 		first = true
 
