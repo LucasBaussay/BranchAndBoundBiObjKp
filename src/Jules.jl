@@ -3,71 +3,7 @@ using JuMP, GLPK, MathOptInterface, PyPlot
 
 const MOI = MathOptInterface
 
-"""
-    jules's functions
-"""
-
-"""
-    redifinition of data structures and empty functions
-"""
-@enum Pruned optimality infeasibility dominance none
-
-struct Problem
-	nbVar::Int
-	nbObj::Int
-	profits::Array{Float64, 2}
-	weights::Array{Float64,1}
-	weightMax::Int
-end
-
-function Problem()
-	return Problem(
-					6,
-					2,
-					[11 2 8 10 9 1; 2 7 8 4 1 3],
-					[4, 4, 6, 4, 3, 2],
-					11
-				)
-end
-
-mutable struct Solution
-	x::Vector{Float64}
-	y::Vector{Float64}
-	w::Float64
-end
-
-struct Assignment
-	assign::Vector{Float64}
-	profit::Vector{Float64}
-	weight::Float64
-	assignEndIndex::Int
-end
-
-function Assignment()
-	return Assignment(
-			Vector{Float64}(),
-			Vector{Float64}(),
-			0,
-			0)
-end
-
-function Assignment(prob::Problem)
-	return(
-		ones(Float64, prob.nbVar)*-1,
-		zeros(Float64, prob.nbObj),
-		0,
-		0)
-end
-
-struct PairOfSolutions
-	solL::Solution
-	solR::Solution
-end
-
-struct DualSet
-	A::Array{Float64, 2}
-	b::Array{Float64, 1}
-end
+include("dataStruct.jl")
 
 """
     getNadirPoints(LB::Vector{Solution})
@@ -85,6 +21,19 @@ function getNadirPoints(LB::Vector{Solution})
     return nadirPoints
 end
 
+"""
+    solve1OKP(prob::Problem, assignment::Assignment)
+
+    returns a tuple (Solution,Bool). The boolean is false if the solver couldn't solve the problem, and true otherwise.
+
+    usage :
+    > sol, optimal_status = solve1OKP(myProb, myAssignment)
+    > if !optimal_status
+            return empty_sol() // for exemple
+      else
+            return sol
+      end
+"""
 function solve1OKP(prob::Problem, assignment::Assignment)
     @assert prob.nbObj == 1 "solve1OKP only supports one objective function"
 
