@@ -1,4 +1,8 @@
 
+using JuMP, GLPK, MathOptInterface, PyPlot
+
+const MOI = MathOptInterface
+
 """
     jules's functions
 """
@@ -6,26 +10,101 @@
 """
     redifinition of data structures and empty functions
 """
+@enum Pruned optimality infeasibility dominance none
+
 struct Problem
 	nbVar::Int
 	nbObj::Int
 	profits::Array{Float64, 2}
-	weights::Array{Float64, 1}
-	maxWeight::Float64
+	weights::Array{Float64,1}
+	weightMax::Int
 end
 
-struct Solution
-	x::Vector{Bool}
+function Problem()
+	return Problem(
+					6,
+					2,
+					[11 2 8 10 9 1; 2 7 8 4 1 3],
+					[4, 4, 6, 4, 3, 2],
+					11
+				)
+end
+
+mutable struct Solution
+	x::Vector{Float64}
 	y::Vector{Float64}
-	
 	w::Float64
 end
 
-struct PairOfSolution
+struct Assignment
+	assign::Vector{Float64}
+	profit::Vector{Float64}
+	weight::Float64
+	assignEndIndex::Int
+end
+
+function Assignment()
+	return Assignment(
+			Vector{Float64}(),
+			Vector{Float64}(),
+			0,
+			0)
+end
+
+function Assignment(prob::Problem)
+	return(
+		ones(Float64, prob.nbVar)*-1,
+		zeros(Float64, prob.nbObj),
+		0,
+		0)
+end
+
+struct PairOfSolutions
 	solL::Solution
 	solR::Solution
 end
 
+struct DualSet
+	A::Array{Float64, 2}
+	b::Array{Float64, 1}
+end
+
+"""
+    getNadirPoints(LB::Vector{Solution})
+
+    returns a the nadir points (ordered by first objective value) in a vector of pair of solutions (Vector{PairOfSolution})
+
+    IMPORTANT : the solutions inside each a PairOfSolution are the solutions of the LB parameter. We didn't copy them but directly paste their reference.
+"""
+function getNadirPoints(LB::Vector{Solution})
+    nbNadirPoints = length(LB) - 1
+    nadirPoints = Vector{PairOfSolution}(undef,nbNadirPoints)
+    for i in 1:nbNadirPoints
+        nadirPoints[i] = PairOfSolution(LB[i],LB[i+1]) # we put the solutions by reference not by copy
+    end
+    return nadirPoints
+end
+
+function solve1OKP(prob::Problem, assignment::Assignment)
+    @assert prob.nbObj == 1 "solve1OKP only supports one objective function"
+
+	model = Model(GLPK.Optimizer)
+	x = @variable(model, x[1:(prob.nbVar-assignment.assignEndIndex)], Bin)
+	@constraint(model, Weights, sum(x .* prob.weights[assignment.assignEndIndex+1:end]) + assignment.weight <= prob.maxWeight)
+	@objective(model, Max, sum(x .* prob.profits[1, assignment.assignEndIndex+1:end]) + assignment.profit)
+    
+	optimize!(model)
+
+    X = append!(assignment.assign[1:assignment.assignEndIndex],(Float64).(value.(x)))
+
+    if MOI.get(GLPK.Optimizer, TerminationStatus()) == success
+        return Solution(X, [objective_value(model)], sum(value.(x) .* prob.weights)), true
+    else
+        return Solution(X, [objective_value(model)], sum(value.(x) .* prob.weights)), false
+    end
+end
+
+#=
 function isLDominatingR(yL::Vector{Float64}, yR::Vector{Float64})
     @assert length(yL) == 2 && length(yR) == 2 "We only support two objectives"
     solLDominates = true
@@ -90,22 +169,6 @@ function mainJules(;verbose=false)
 end
 
 """
-    getNadirPoints(LB::Vector{Solution})
-
-    returns a the nadir points (ordered by first objective value) in a vector of pair of solutions (Vector{PairOfSolution})
-
-    IMPORTANT : the solutions inside each a PairOfSolution are the solutions of the LB parameter. We didn't copy them but directly paste their reference.
-"""
-function getNadirPoints(LB::Vector{Solution})
-    nbNadirPoints = length(LB) - 1
-    nadirPoints = Vector{PairOfSolution}(undef,nbNadirPoints)
-    for i in 1:nbNadirPoints
-        nadirPoints[i] = PairOfSolution(LB[i],LB[i+1]) # we put the solutions by reference not by copy
-    end
-    return nadirPoints
-end
-
-"""
     updateLowerBound(LB::Vector{Solution}, nadirPoints::Vector{PairOfSolution}, subLB::Vector{Solution})
 
     update the LB parameter and returns a new nadirPoints vector.
@@ -165,3 +228,4 @@ function updateLowerBound(LB::Vector{Solution}, nadirPoints::Vector{PairOfSoluti
         pop!(nadirPoints)
     end
 end
+=#
