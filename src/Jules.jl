@@ -162,5 +162,6 @@ function updateLowerBound(LB::Vector{Solution}, nadirPoints::Vector{PairOfSoluti
 
     for i in 1:decay
         pop!(LB)
+        pop!(nadirPoints)
     end
 end
