@@ -74,6 +74,12 @@ function whichDominates(yL::Vector{Float64}, yR::Vector{Float64})
     end
 end
 
+function replaceSolByOtherSol(oldSol::Solution, newSol::Solution)
+    oldSol.x = newSol.x
+    oldSol.y = newSol.y
+    oldSol.w = oldSol.w
+end
+
 """
     mainJules(;verbose=false)
 
@@ -110,9 +116,41 @@ end
 """
 function updateLowerBound(LB::Vector{Solution}, nadirPoints::Vector{PairOfSolution}, subLB::Vector{Solution})
     # check if solutions of subLB dominate solutions of LB
+    indFirstDominated = zeros(Int,length(subLB))
+    indFirstNotDominated = zeros(Int,length(subLB))
     for i in 1:length(subLB)
-        for j in 1:length(LB)
-            if isLDominatingR(subLB[i].y,LB[j].y)
+        deb = 1
+        if i > 1 # we skip the first part of the LB to optimize the process
+            if indFirstNotDominated[i-1] > 0
+                deb = indFirstNotDominated[i-1]
+            end
+        end
+        if deb <= length(LB)
+            for j in deb:length(LB)
+                if isLDominatingR(subLB[i].y,LB[j].y)
+                    if indFirstDominated[i] == 0
+                        indFirstDominated[i] = j
+                    end
+                elseif j == length(LB)
+                    indFirstNotDominated[i] = j+1
+                    break
+                elseif indFirstDominated[i] > 0 && indFirstNotDominated[i] == 0
+                    indFirstNotDominated[i] = j
+                    break
+                end
+            end
+        end
+    end
+    # modify LB and nadirPoints in consequence
+    decay = 0
+    for i in 1:length(subLB)
+        if indFirstDominated[i] > 0
+            replaceSolByOtherSol(LB[indFirstDominated[i]],subLB[i])
+        elseif indFirstNotDominated[i] - indFirstDominated[i] > 0
+            while indFirstNotDominated[i] <= length(LB)
+            for k in indFirstDominated[i]:indFirstNotDominated[i]
+
+                replaceSolByOtherSol(LB[indFirstDominated[i]+1], subLB[i])
 
             end
         end
