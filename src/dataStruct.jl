@@ -1,5 +1,9 @@
 
+<<<<<<< HEAD
 @enum PRUNED optimality infeasibility dominance none
+=======
+@enum Pruned optimality infeasibility dominance none
+>>>>>>> 75b393084b89e3a82f913f518dbf11f70ee5595a
 
 struct Problem
 	nbVar::Int
@@ -9,6 +13,7 @@ struct Problem
 	weightMax::Int
 end
 
+<<<<<<< HEAD
 function Problem()
 	return Problem(
 					6,
@@ -56,4 +61,22 @@ end
 struct DualSetLinear
 	A::Array{Float64, 2}
 	b::Array{Float64, 1}
+=======
+mutable struct Solution
+	x::Array{Float64, 1}
+	y::Array{Float64, 1}
+	w::Float64
+end
+
+mutable struct Assignment
+	assign::Array{Float64, 1}
+	profit::Float64
+	weight::Float64
+	assignEndIndex:: Int
+end
+
+struct PairOfSolutions
+	sol1::Solution
+	sol2::Solution
+>>>>>>> 75b393084b89e3a82f913f518dbf11f70ee5595a
 end
