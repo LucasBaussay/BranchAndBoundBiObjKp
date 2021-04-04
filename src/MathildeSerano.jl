@@ -92,11 +92,12 @@ function dichoSearch(prob::Problem, assignment::Assignment = Assignment(), M = 1
         end
     end
 
+	sort!(lowerBound, by=x->x.y[1])
 	return lowerBound
 
 end
 
-function pruningTest(lengthSubLB::Int, listPointsNadir::Vector{PairOfSolution}, subUpperBound::DualSet)
+function pruningTest(lengthSubLB::Int, listPointsNadir::Vector{PairOfSolutions}, subUpperBound::DualSet)
 
 	lengthSubLB == 1 && return optimality, Vector{PairOfSolutions}()
 	lengthSubLB == 0 && return infeasibility, Vector{PairOfSolutions}()
