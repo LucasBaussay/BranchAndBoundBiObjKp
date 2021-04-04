@@ -125,19 +125,17 @@ function updateLowerBound(LB::Vector{Solution}, nadirPoints::Vector{PairOfSoluti
                 deb = indFirstNotDominated[i-1]
             end
         end
-        if deb <= length(LB)
-            for j in deb:length(LB)
-                if isLDominatingR(subLB[i].y,LB[j].y)
-                    if indFirstDominated[i] == 0
-                        indFirstDominated[i] = j
-                    end
-                elseif j == length(LB)
-                    indFirstNotDominated[i] = j+1
-                    break
-                elseif indFirstDominated[i] > 0 && indFirstNotDominated[i] == 0
-                    indFirstNotDominated[i] = j
-                    break
+        for j in deb:length(LB)
+            if isLDominatingR(subLB[i].y,LB[j].y)
+                if indFirstDominated[i] == 0
+                    indFirstDominated[i] = j
                 end
+            elseif indFirstDominated[i] > 0 && j == length(LB)
+                indFirstNotDominated[i] = j+1
+                break
+            elseif indFirstDominated[i] > 0 && indFirstNotDominated[i] == 0
+                indFirstNotDominated[i] = j
+                break
             end
         end
     end
