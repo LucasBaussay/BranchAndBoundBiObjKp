@@ -11,7 +11,7 @@ function computeUpperBound(lowerBound::Vector{Solution})
 	for iter = 1:(nbConstraints-2)
 
 		pair = PairOfSolution(lowerBound[iter], lowerBound[iter+1])
-		
+
 		A[iter, 1] = pair.solL.y[2] - pair.solR.y[2]
 		A[iter, 2] = pair.solR.y[1] - pair.solL.y[1]
 
@@ -49,7 +49,7 @@ end
 function addVarAssignment!(assignment::Assignment, prob::Problem)
 	assignment.assignEndIndex += 1
 	assignment.assign[assignment.assignEndIndex] = 1
-	
+
 	assignment.weight += prob.weights[assignment.assignEndIndex]
 	assignment.profit += prob.profits[1:end, assignment.assignEndIndex]
 end
@@ -61,7 +61,7 @@ function removeVarAssignment!(assignment::Assignment, prob::Problem, testAddVar:
 		assignment.weight -= prob.weights[assignment.assignEndIndex]
 		assignment.profit -= prob.profits[1:end, assignment.assignEndIndex]
 	end
-	
+
 	assignment.assign[assignment.assignEndIndex] = 0
 end
 
@@ -71,30 +71,30 @@ function returnParentAssignment!(assignment::Assignment, prob::Problem)
 end
 
 function branchAndBound!(lowerBound::Vector{Solution}, assignment::Assignment, nadirPointsToStudy::Vector{PairOfSolution}; M::Int = 1000)
-	
+
 	subLowerBound = dichoSearch(prob, assignment, M = M) #Nathalie
 	subUpperBound = computeUpperBound(lowerBound) #Lucas
-	
+
 	prunedType, newNadirPoints = pruningTest(subUpperBound, nadirPointsTuStudy) #Nathalie
-	
+
 	if prunedType == oprimality || prunedType == none
 		updateLowerBound!(lowerBound, newNadirPoints, subLowerBound) #Jules
 	end
-	
+
 	if prunedType == none && assignment.assignEndIndex < prob.nbVar
 		testAddVar = (assignment.weight + prob.weights[assignment.assignEndIndex] <= prob.maxWeight)
-		
+
 		if testAddVar
 			addVarAssignment!(assignment, prob) #Lucas
 			branchAndABound!(lowerBound, assignment, newNadirPoints, M = M) #Lucas
 		end
 		removeVarAssignment!(assignment, prob, testAddVar) #Lucas
 		branchAndBound!(lowerBound, newNadirPoints, M = M) #Lucas
-		
+
 		returnParentAssignment!(assignment, prob) #Lucas
 	end
-	
-	
+
+
 
 end
 

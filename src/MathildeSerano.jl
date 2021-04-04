@@ -17,6 +17,19 @@ function weightedRelax(prob::Problem, λ::Vector{Float64})
 			prob.weightMax)
 end
 
+#temporaire c'est pour tester frère
+function solve1OKP(prob::Problem)
+
+	model = Model(GLPK.Optimizer)
+	x = @variable(model, x[1:prob.nbVar], Bin)
+	@constraint(model, Weights, sum(x .* prob.weights) <= prob.weightMax)
+	@objective(model, Max, sum(x .* prob.profits[1, 1:end]))
+
+	optimize!(model)
+
+	return Solution(Float64.(value.(x)), [objective_value(model)], sum(value.(x) .* prob.weights))
+end
+
 function evaluate(prob::Problem, x::Vector{Float64})
     y = zeros(Float64, prob.nbObj)
     weight = 0
@@ -41,13 +54,13 @@ function dichoSearch(prob::Problem, assignment::Assignment = Assignment(), M = 1
 
     assignment.assign == [] && (assignment = Assignment(prob))
     lowerBound = Vector{Solution}()
-	toStudy = Vector{PairOfSolutions}()
+	toStudy = Vector{PairOfSolution}()
 
     λ = [1, M]
-    leftSol = solveKP(weightedRelax(prob, λ))
+    leftSol = solve1OKP(weightedRelax(prob, λ))
 	leftSol = evaluate(prob, leftSol.x)
     λ = [M, 1]
-    rightSol = solveKP(weightedRelax(prob, λ))
+    rightSol = solve1OKP(weightedRelax(prob, λ))
 	rightSol = evaluate(prob, rightSol.x)
 
 	verbose && println("Two found solutions : $leftSol && $rightSol")
@@ -65,7 +78,7 @@ function dichoSearch(prob::Problem, assignment::Assignment = Assignment(), M = 1
 
 		verbose && println("LB = $lowerBound")
 
-        push!(toStudy, PairOfSolutions(leftSol, rightSol))
+        push!(toStudy, PairOfSolution(leftSol, rightSol))
 
 		verbose && println("toStudy origin: $toStudy")
 
@@ -80,48 +93,56 @@ function dichoSearch(prob::Problem, assignment::Assignment = Assignment(), M = 1
 			verbose && println("Found solutions : $leftSol && $rightSol")
 
 	        λ = [leftSol.y[2] - rightSol.y[2], rightSol.y[1] - leftSol.y[1]]
-	        midSol = solveKP(weightedRelax(prob, λ))
+	        midSol = solve1OKP(weightedRelax(prob, λ))
 			midSol = evaluate(prob, midSol.x)
 
 			# if the solution dominates one of the other, it's added to the LB
 			if sum(λ .* midSol.y) > sum(λ .* rightSol.y)
 				push!(lowerBound, midSol)
-				push!(toStudy, PairOfSolutions(leftSol, midSol))
-				push!(toStudy, PairOfSolutions(midSol, rightSol))
+				push!(toStudy, PairOfSolution(leftSol, midSol))
+				push!(toStudy, PairOfSolution(midSol, rightSol))
 			end
         end
+
+		sort!(lowerBound, by=x->x.y[1])
     end
 
-	sort!(lowerBound, by=x->x.y[1])
 	return lowerBound
 
 end
 
-function pruningTest(lengthSubLB::Int, listPointsNadir::Vector{PairOfSolutions}, subUpperBound::DualSet)
+function pruningTest(lengthSubLB::Int, listPointsNadir::Vector{PairOfSolution}, subUpperBound::DualSet, verbose = true)
 
-	lengthSubLB == 1 && return optimality, Vector{PairOfSolutions}()
-	lengthSubLB == 0 && return infeasibility, Vector{PairOfSolutions}()
+	lengthSubLB == 1 && return optimality, Vector{PairOfSolution}()
+	lengthSubLB == 0 && return infeasibility, Vector{PairOfSolution}()
+
+	domi = true
+	noneDomiNadirs = Vector{PairOfSolution}()
 
 	for pairNadir in listPointsNadir
 
-		nadir = pairNadir.solL.y[1], pairNadir.solR.y[2]
-		nadirA = nadir * subUpperBound.A
+		verbose && println("pairNadir : $pairNadir")
+		nadir = [pairNadir.solL.y[1], pairNadir.solR.y[2]]
+		nadirA = subUpperBound.A * nadir
 
-		# domi = true
-		noneDomiNadirs = Vector{PairOfSolutions}()
 
-		while iter <= length(subUpperBound) # && domi = true
+		iter = 1
+		first = true
+
+		while iter <= length(subUpperBound.b) && (domi == true || first == true)
 			if nadirA[iter] <= subUpperBound.b[iter]
-				# domi = false
-				push!(noneDomiNadirs, pairNadir)
+				if first
+					push!(noneDomiNadirs, pairNadir)
+					first = false
+				end
+				domi = false
 			end
 			iter += 1
-
 		end
 	end
 
 	if domi == true
-		return dominance, Vector{PairOfSolutions}()
+		return dominance, Vector{PairOfSolution}()
 	else
 		return none, noneDomiNadirs
 	end

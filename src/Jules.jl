@@ -6,25 +6,25 @@
 """
     redifinition of data structures and empty functions
 """
-struct Problem
-	nbVar::Int
-	nbObj::Int
-	profits::Array{Float64, 2}
-	weights::Array{Float64, 1}
-	maxWeight::Float64
-end
-
-struct Solution
-	x::Vector{Bool}
-	y::Vector{Float64}
-	
-	w::Float64
-end
-
-struct PairOfSolution
-	solL::Solution
-	solR::Solution
-end
+# struct Problem
+# 	nbVar::Int
+# 	nbObj::Int
+# 	profits::Array{Float64, 2}
+# 	weights::Array{Float64, 1}
+# 	maxWeight::Float64
+# end
+#
+# struct Solution
+# 	x::Vector{Bool}
+# 	y::Vector{Float64}
+#
+# 	w::Float64
+# end
+#
+# struct PairOfSolution
+# 	solL::Solution
+# 	solR::Solution
+# end
 
 function isLDominatingR(yL::Vector{Float64}, yR::Vector{Float64})
     @assert length(yL) == 2 && length(yR) == 2 "We only support two objectives"
@@ -112,7 +112,7 @@ end
 
     @LB : current best LB for the main problem (solutions oredered by first objective value)
     @nadirPoints : nadirPoints of the LB
-    @subLB : 
+    @subLB :
 """
 function updateLowerBound(LB::Vector{Solution}, nadirPoints::Vector{PairOfSolution}, subLB::Vector{Solution})
     # check if solutions of subLB dominate solutions of LB

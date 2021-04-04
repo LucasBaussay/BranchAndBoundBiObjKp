@@ -48,7 +48,7 @@ function Assignment(prob::Problem)
 		0)
 end
 
-struct PairOfSolutions
+struct PairOfSolution
 	solL::Solution
 	solR::Solution
 end
