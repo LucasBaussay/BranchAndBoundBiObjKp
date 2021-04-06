@@ -453,13 +453,13 @@ function branchAndBound!(lowerBound::T, prob::Problem, assignment::Assignment, n
 
 end
 
-function main(prob::Problem; withLinear::Bool = false, M::Float64 = 1000.)
+function main(prob::Problem; withLinear::Bool = false, M::Float64 = 1000., avecLesFigures::Bool = false)
 
 	@assert prob.nbObj == 2 "This Branch and Bound supports only a Bio-objective problem"
 
 	assignment = Assignment(prob) #Nathalie
 
-	compt = Compteur()
+	compt = avecLesFigures ? Compteur() : nothing
 
 	lowerBound = dichoSearch(prob, assignment, M = M) #Nathalie
 	nadirPoints = getNadirPoints(lowerBound) #Jules
