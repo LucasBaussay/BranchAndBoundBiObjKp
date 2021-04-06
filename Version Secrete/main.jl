@@ -214,9 +214,9 @@ end
 function updateLowerBound!(lowerBound::T, nadirPoints::Vector{PairOfSolution}, listOfPoint::LinkedList{Solution}; compteur = nothing) where T<:LinkedList{Solution}
 
 	if compteur != nothing && compteur.value == 526
-		println(lowerBound)
-		println(nadirPoints)
-		println(listOfPoint)
+		println(map(sol->sol.y, lowerBound))
+		println(broadcast(pair->(pair.solL.y, pair.solR.y), nadirPoints))
+		println(map(sol->sol.y, listOfPoint))
 		
 		fig = figure()
 		ax = fig.add_subplot(111)
@@ -233,25 +233,14 @@ function updateLowerBound!(lowerBound::T, nadirPoints::Vector{PairOfSolution}, l
 			iter += 1
 		end
 		
-		lengthLower = length(listOfPoint)
-		solX = Vector{Float64}(undef, lengthLower)
-		solY = Vector{Float64}(undef, lengthLower)
-		
-		iter = 1
-		for sol in listOfPoint
-			solX[iter] = sol.y[1]
-			solY[iter] = sol.y[2]
-			
-			iter += 1
-		end
-		
 		ax.plot(solX, solY, "g-.")
 		ax.plot(broadcast(pair->pair.solL.y[1], nadirPoints), broadcast(pair->pair.solR.y[2], nadirPoints), "r.")
 		ax.set_xlabel("z_1(x)")
 		ax.set_ylabel("z_2(x)")
 		ax.grid(true)
-		fig.savefig("SaveFig/LEBUG_$(compteur.value).png")
-		close(fig)
+		
+		
+		
 	end
 		
 		
@@ -333,9 +322,22 @@ function updateLowerBound!(lowerBound::T, nadirPoints::Vector{PairOfSolution}, l
 				pairNadir = nadirPoints[iterPair]
 				
 				if dominate(sol, pairNadir)
+					println("SOLUTIOOOOOOOOOOOOOOON : $(sol.y)")
+					if sol.y == [2234., 1811.]
+						println(map(sol->sol.y, lowerBound))
+						println(broadcast(pair->(pair.solL.y, pair.solR.y), nadirPoints))
+						println(map(sol->sol.y, listOfPoint))
+					end
+				
 					testDomiNadir = true
 					nadirPoints = append!(push!(nadirPoints[1:(iterPair-1)], PairOfSolution(pairNadir.solL, sol), PairOfSolution(sol, pairNadir.solR)), nadirPoints[(iterPair+1):end])
+					sol.y == [2234., 1811.] && println(broadcast(pair->(pair.solL.y, pair.solR.y), nadirPoints))
 					pairDomin = pairNadir
+					if compteur != nothing && compteur.value == 526
+						ax.plot(sol.y[1], sol.y[2], "b.")
+						
+						println("$(sol.y) - $((pairDomin.solL.y, pairDomin.solR.y))")
+					end
 				end
 				iterPair += 1
 			end
@@ -349,7 +351,12 @@ function updateLowerBound!(lowerBound::T, nadirPoints::Vector{PairOfSolution}, l
 					if studiedLowerBound.head == pairDomin.solL
 						studiedLowerBound.tail = cons(sol, studiedLowerBound.tail)
 						
+						
 						if studiedLowerBound.tail == nil(Solution) || studiedLowerBound.tail.tail.head != pairDomin.solR
+							
+							fig.savefig("SaveFig/LEBUG_$(compteur.value)-1.png")
+							close(fig)
+							
 							@assert false "J'en peux plus des bugs ! $(studiedLowerBound.tail.tail.head.y) - $(pairDomin.solR.y)"
 						end
 						
