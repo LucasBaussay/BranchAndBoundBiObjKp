@@ -211,7 +211,50 @@ function dominate(sol::Solution, pair::PairOfSolution)
 	return sol.y[1] > pair.solL.y[1] && sol.y[2] > pair.solR.y[2]
 end
 
-function updateLowerBound!(lowerBound::T, nadirPoints::Vector{PairOfSolution}, listOfPoint::LinkedList{Solution}) where T<:LinkedList{Solution}
+function updateLowerBound!(lowerBound::T, nadirPoints::Vector{PairOfSolution}, listOfPoint::LinkedList{Solution}; compteur = nothing) where T<:LinkedList{Solution}
+
+	if compteur != nothing && compteur.value == 526
+		println(lowerBound)
+		println(nadirPoints)
+		println(listOfPoint)
+		
+		fig = figure()
+		ax = fig.add_subplot(111)
+		
+		lengthLower = length(lowerBound)
+		solX = Vector{Float64}(undef, lengthLower)
+		solY = Vector{Float64}(undef, lengthLower)
+		
+		iter = 1
+		for sol in lowerBound
+			solX[iter] = sol.y[1]
+			solY[iter] = sol.y[2]
+			
+			iter += 1
+		end
+		
+		lengthLower = length(listOfPoint)
+		solX = Vector{Float64}(undef, lengthLower)
+		solY = Vector{Float64}(undef, lengthLower)
+		
+		iter = 1
+		for sol in listOfPoint
+			solX[iter] = sol.y[1]
+			solY[iter] = sol.y[2]
+			
+			iter += 1
+		end
+		
+		ax.plot(solX, solY, "g-.")
+		ax.plot(broadcast(pair->pair.solL.y[1], nadirPoints), broadcast(pair->pair.solR.y[2], nadirPoints), "r.")
+		ax.set_xlabel("z_1(x)")
+		ax.set_ylabel("z_2(x)")
+		ax.grid(true)
+		fig.savefig("SaveFig/LEBUG_$(compteur.value).png")
+		close(fig)
+	end
+		
+		
 
 	for sol in listOfPoint
 		
@@ -327,12 +370,12 @@ end
 
 
 
-function pruningTest(lowerBound::T, listPointsNadir::Vector{PairOfSolution}, subUpperBound::DualSet, verbose = false; compteur = nothing) where T<:LinkedList{Solution}
+function pruningTest(lowerBound::T, listPointsNadir::Vector{PairOfSolution}, subUpperBound::DualSet, verbose = false; compteur = nothing, avecLesFigures = false) where T<:LinkedList{Solution}
 
 	lowerBound == nil(Solution) && return infeasibility, Vector{PairOfSolution}()
 	lowerBound.tail == nil(Solution) && return optimality, Vector{PairOfSolution}()
 	
-	if compteur != nothing
+	if compteur != nothing && avecLesFigures
 		
 		fig = figure()
 		ax = fig.add_subplot(111)
@@ -419,23 +462,22 @@ function returnParentAssignment!(assignment::Assignment, prob::Problem)
 	assignment.assignEndIndex -= 1
 end
 
-function branchAndBound!(lowerBound::T, prob::Problem, assignment::Assignment, nadirPointsToStudy::Vector{PairOfSolution}; M::Float64 = 1000., num::Int = 1, compteur = nothing) where T<:LinkedList{Solution}
+function branchAndBound!(lowerBound::T, prob::Problem, assignment::Assignment, nadirPointsToStudy::Vector{PairOfSolution}; M::Float64 = 1000., num::Int = 1, compteur = nothing, avecLesFigures = false) where T<:LinkedList{Solution}
 	
 	compteur != nothing && (compteur.value += 1)
-	println(num)
+	compteur != nothing && println(compteur.value)
 	
 	subLowerBound = dichoSearch(prob, assignment, M = M) #Nathalie
-	subUpperBound = computeUpperBound(lowerBound) #Lucas
+	subUpperBound = computeUpperBound(subLowerBound) #Lucas
 
-	prunedType, newNadirPoints = pruningTest(subLowerBound, nadirPointsToStudy, subUpperBound, compteur = compteur) #Nathalie
+	prunedType, newNadirPoints = pruningTest(subLowerBound, nadirPointsToStudy, subUpperBound, compteur = compteur, avecLesFigures = avecLesFigures) #Nathalie
 
-	println(prunedType)
 	#println("lowerBound : $(map(sol->sol.y, lowerBound))")
 	#println("nadirPoints : $(broadcast(pair->(pair.solL.y[1], pair.solR.y[2]), nadirPointsToStudy)), newNadirPoints : $(broadcast(pair->(pair.solL.y[1], pair.solR.y[2]), newNadirPoints))")
 	#println("nadirPoints : $(broadcast(pair->(pair.solL.y, pair.solR.y), nadirPointsToStudy)), newNadirPoints : $(broadcast(pair->(pair.solL.y, pair.solR.y), newNadirPoints))")
 
 	if prunedType == optimality || prunedType == none
-		newNadirPoints = updateLowerBound!(lowerBound, newNadirPoints, subLowerBound) #Lucas/Jules/Nathalie
+		newNadirPoints = updateLowerBound!(lowerBound, newNadirPoints, subLowerBound, compteur = compteur) #Lucas/Jules/Nathalie
 	end
 
 	if prunedType == none && assignment.assignEndIndex < prob.nbVar
@@ -443,10 +485,10 @@ function branchAndBound!(lowerBound::T, prob::Problem, assignment::Assignment, n
 
 		if testAddVar
 			addVarAssignment!(assignment, prob) #Lucas
-			branchAndBound!(lowerBound, prob, assignment, newNadirPoints, M = M, num = num + 1, compteur = compteur) #Lucas
+			branchAndBound!(lowerBound, prob, assignment, newNadirPoints, M = M, num = num + 1, compteur = compteur, avecLesFigures = avecLesFigures) #Lucas
 		end
 		removeVarAssignment!(assignment, prob, testAddVar) #Lucas
-		branchAndBound!(lowerBound, prob, assignment, newNadirPoints, M = M, num = num + 1, compteur = compteur) #Lucas
+		branchAndBound!(lowerBound, prob, assignment, newNadirPoints, M = M, num = num + 1, compteur = compteur, avecLesFigures = avecLesFigures) #Lucas
 
 		returnParentAssignment!(assignment, prob) #Lucas
 	end
@@ -459,23 +501,23 @@ function main(prob::Problem; withLinear::Bool = false, M::Float64 = 1000., avecL
 
 	assignment = Assignment(prob) #Nathalie
 
-	compt = avecLesFigures ? Compteur() : nothing
+	compt = Compteur()
 
 	lowerBound = dichoSearch(prob, assignment, M = M) #Nathalie
 	nadirPoints = getNadirPoints(lowerBound) #Jules
 
-	branchAndBound!(lowerBound, prob, assignment, nadirPoints, M = M, compteur = compt) #Lucass
+	branchAndBound!(lowerBound, prob, assignment, nadirPoints, M = M, compteur = compt, avecLesFigures = avecLesFigures) #Lucass
 
 	return lowerBound
 
 end
 
-function main(fname::String; withLinear::Bool = false, M::Float64 = 1000.)
+function main(fname::String; withLinear::Bool = false, M::Float64 = 1000., avecLesFigures::Bool = false)
 	prob = Problem(fname)
-	return main(prob, withLinear = withLinear, M = M)
+	return main(prob, withLinear = withLinear, M = M, avecLesFigures = avecLesFigures)
 end
 
-function main(;withLinear::Bool = false, M::Float64 = 1000.)
+function main(;withLinear::Bool = false, M::Float64 = 1000., avecLesFigures::Bool = false)
 	prob = Problem()
-	return main(prob, withLinear = withLinear, M = M)
+	return main(prob, withLinear = withLinear, M = M, avecLesFigures = avecLesFigures)
 end
