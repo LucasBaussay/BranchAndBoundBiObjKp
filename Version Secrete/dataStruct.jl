@@ -103,6 +103,14 @@ struct DualSet
 	b::Array{Float64, 1}
 end
 
+mutable struct Compteur
+	value::Int
+end
+
+function Compteur()
+	return Compteur(0)
+end
+
 function Solution()
 	return Solution(
 			Vector{Float64}(), 
