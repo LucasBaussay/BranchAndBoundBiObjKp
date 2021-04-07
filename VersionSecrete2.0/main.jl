@@ -19,17 +19,47 @@ function addLowerBound!(lowerBound::T, sol::Solution) where T<:LinkedList{Soluti
 	end
 end
 
+function merge(listNadirA::Vector{PairOfSolution}, listNadirB::Vector{PairOfSolution})
+	lengthA = length(listNadirA)
+	lengthB = length(listNadirB)
+	
+	iterA = 1
+	iterB = 1
+	iter = 1
+	
+	finalList = Vector{PairOfSolution}(undef, lengthA + lengthB)
+	
+	while iterA <= lengthA && iterB <= lengthB
+		if listNadirA[iterA].solL.y[1] < listNadirB[iterB].solL.y[1]
+			finalList[iter] = listNadirA[iterA]
+			iterA += 1
+		else
+			finalList[iter] = listNadirB[iterB]
+			iterB += 1
+		end
+		iter += 1
+	end
+	
+	if iterA > lengthA
+		finalList[iter:end] = listNadirB[iterB:end]
+	else
+		finalList[iter:end] = listNadirA[iterA:end]
+	end
+	
+	return finalList
+end
+
 function getNadirPoints(LB::T) where T<:LinkedList{Solution}
 	nbNadirPoints = length(LB) - 1
     nadirPoints = Vector{PairOfSolution}(undef,nbNadirPoints)
-
+    
     iter = 1
     while LB.tail != nil(Solution)
     	nadirPoints[iter] = PairOfSolution(LB.head, LB.tail.head)
     	LB = LB.tail
     	iter += 1
     end
-
+    
     return nadirPoints
 end
 
@@ -45,7 +75,7 @@ function solve1OKP(prob::Problem, assignment::Assignment)
 	optimize!(model)
 
 	X = append!(assignment.assign[1:assignment.assignEndIndex],(Float64).(value.(x)))
-
+	
 	termStatus = termination_status(model)
 
 	if termStatus == MOI.OPTIMAL
@@ -101,7 +131,7 @@ function dichoSearch(prob::Problem, assignment::Assignment; M::Float64 = 1000., 
     λ = [M, 1]
     rightSol, testRight = solve1OKP(weightedRelax(prob, λ), assignment)
 	rightSol = evaluate(prob, rightSol.x)
-
+	
 	@assert testLeft && testRight "Bah écoute, on choppe des solutions infaisables, de mieux en mieux"
 
 	verbose && println("Two found solutions : $leftSol && $rightSol")
@@ -135,7 +165,7 @@ function dichoSearch(prob::Problem, assignment::Assignment; M::Float64 = 1000., 
 	        λ = [leftSol.y[2] - rightSol.y[2], rightSol.y[1] - leftSol.y[1]]
 	        midSol, testMid = solve1OKP(weightedRelax(prob, λ), assignment)
 			midSol = evaluate(prob, midSol.x)
-
+			
 			@assert testMid "Bah écoute, on choppe des solutions infaisables, de mieux en mieux"
 
 			# if the solution dominates one of the other, it's added to the LB
@@ -160,7 +190,7 @@ function computeUpperBound(lowerBound::T) where T<:LinkedList{Solution}
 
 	max1 = 0
 	max2 = 0
-
+	
 	iter = 1
 	while lowerBound.tail != nil(Solution)
 
@@ -183,7 +213,7 @@ function computeUpperBound(lowerBound::T) where T<:LinkedList{Solution}
 		if pair.solR.y[2] > max2
 			max2 = pair.solR.y[2]
 		end
-
+		
 		lowerBound = lowerBound.tail
 		iter += 1
 
@@ -208,56 +238,25 @@ function dominate(sol1::Solution, sol2::Solution)
 end
 
 function dominate(sol::Solution, pair::PairOfSolution)
-	return sol.y[1] > pair.solL.y[1] && sol.y[2] > pair.solR.y[2]
+	return sol.y[1] >= (pair.solL.y[1] + 1) && sol.y[2] >= (pair.solR.y[2]+1)
 end
 
 function updateLowerBound!(lowerBound::T, nadirPoints::Vector{PairOfSolution}, listOfPoint::LinkedList{Solution}; compteur = nothing) where T<:LinkedList{Solution}
 
-	if compteur != nothing && compteur.value == 526
-		println(map(sol->sol.y, lowerBound))
-		println(broadcast(pair->(pair.solL.y, pair.solR.y), nadirPoints))
-		println(map(sol->sol.y, listOfPoint))
 		
-		fig = figure()
-		ax = fig.add_subplot(111)
-		
-		lengthLower = length(lowerBound)
-		solX = Vector{Float64}(undef, lengthLower)
-		solY = Vector{Float64}(undef, lengthLower)
-		
-		iter = 1
-		for sol in lowerBound
-			solX[iter] = sol.y[1]
-			solY[iter] = sol.y[2]
-			
-			iter += 1
-		end
-		
-		ax.plot(solX, solY, "g-.")
-		ax.plot(broadcast(pair->pair.solL.y[1], nadirPoints), broadcast(pair->pair.solR.y[2], nadirPoints), "r.")
-		ax.set_xlabel("z_1(x)")
-		ax.set_ylabel("z_2(x)")
-		ax.grid(true)
-		
-		
-		
-	end
-		
-		
-
 	for sol in listOfPoint
-
+		
 		studiedLowerBound = lowerBound
-
+		
 		testFirstIn = false
 		testFirstOut = false
-
+		
 		eltBeforeIn = nil(Solution)
 		eltAfterOut = nil(Solution)
-
-
-		while studiedLowerBound != nil(Solution) && !testFirstOut && !(testFirstIn && studiedLowerBound.head.y[1] > sol.y[1])
-
+		
+		
+		while studiedLowerBound != nil(Solution) && !testFirstOut && !(!testFirstIn && studiedLowerBound.head.y[1] > sol.y[1])
+			
 			if !testFirstIn && studiedLowerBound.tail != nil(Solution) && dominate(sol, studiedLowerBound.tail.head)
 				testFirstIn = true
 				eltBeforeIn = studiedLowerBound
@@ -265,13 +264,13 @@ function updateLowerBound!(lowerBound::T, nadirPoints::Vector{PairOfSolution}, l
 				testFirstOut = true
 				eltAfterOut = studiedLowerBound
 			end
-
+			
 			studiedLowerBound = studiedLowerBound.tail
 		end
-
+		
 		if testFirstIn && testFirstOut
 			eltBeforeIn.tail = cons(sol, eltAfterOut)
-
+			
 			indBeforeIn = 0
 			indAfterOut = 0
 			iterNadir = 1
@@ -280,46 +279,17 @@ function updateLowerBound!(lowerBound::T, nadirPoints::Vector{PairOfSolution}, l
 					if nadirPoints[iterNadir].solL.y == eltBeforeIn.head.y
 						indBeforeIn = iterNadir - 1
 					end
-				elseif nadirPoints[iterNadir].solR.y == eltAfterOut.head.y
+				end
+				if nadirPoints[iterNadir].solR.y == eltAfterOut.head.y
 					indAfterOut = iterNadir + 1
 				end
+				iterNadir += 1
 			end
 			nadirPoints = append!(push!(nadirPoints[1:indBeforeIn], PairOfSolution(nadirPoints[indBeforeIn+1].solL, sol), PairOfSolution(sol, nadirPoints[indAfterOut-1].solR)), nadirPoints[indAfterOut:end])
-
+			
 		elseif testFirstIn || testFirstOut
-			error("Putain de Merde")
+			error("testFirstIn : $testFirstIn - testFirstOut : $testFirstOut\n lowerBound : $(map(sol->sol.y, lowerBound))")
 		else
-<<<<<<< HEAD
-
-=======
-			#=
->>>>>>> 9cc9520c8081e479775704998ed21b5bc4ca2d61
-			studiedLowerBound = lowerBound
-			testDominNadir = false
-			pairDomin = PairOfSolution()
-
-			while studiedLowerBound.tail != nil(Solution) && !testDominNadir
-				pair = PairOfSolution(studiedLowerBound.head, studiedLowerBound.tail.head)
-				if dominate(sol, pair)
-					studiedLowerBound.tail = cons(sol, studiedLowerBound.tail)
-					testDominNadir = true
-					pairDomin = pair
-				end
-
-				studiedLowerBound = studiedLowerBound.tail
-			end
-
-			if testDominNadir
-				iterPair = 1
-				while iterPair <= length(nadirPoints) && nadirPoints[iterPair] != pairDomin
-					iterPair += 1
-				end
-				nadirPoints = append!(push!(nadirPoints[1:(iterPair-1)], PairOfSolution(pairDomin.solL, sol), PairOfSolution(sol, pairDomin.solR)), nadirPoints[(iterPair+1):end])
-			end
-<<<<<<< HEAD
-
-=======
-			=#
 			
 			iterPair = 1
 			testDomiNadir = false
@@ -329,22 +299,11 @@ function updateLowerBound!(lowerBound::T, nadirPoints::Vector{PairOfSolution}, l
 				pairNadir = nadirPoints[iterPair]
 				
 				if dominate(sol, pairNadir)
-					println("SOLUTIOOOOOOOOOOOOOOON : $(sol.y)")
-					if sol.y == [2234., 1811.]
-						println(map(sol->sol.y, lowerBound))
-						println(broadcast(pair->(pair.solL.y, pair.solR.y), nadirPoints))
-						println(map(sol->sol.y, listOfPoint))
-					end
 				
 					testDomiNadir = true
 					nadirPoints = append!(push!(nadirPoints[1:(iterPair-1)], PairOfSolution(pairNadir.solL, sol), PairOfSolution(sol, pairNadir.solR)), nadirPoints[(iterPair+1):end])
-					sol.y == [2234., 1811.] && println(broadcast(pair->(pair.solL.y, pair.solR.y), nadirPoints))
 					pairDomin = pairNadir
-					if compteur != nothing && compteur.value == 526
-						ax.plot(sol.y[1], sol.y[2], "b.")
-						
-						println("$(sol.y) - $((pairDomin.solL.y, pairDomin.solR.y))")
-					end
+					
 				end
 				iterPair += 1
 			end
@@ -361,9 +320,6 @@ function updateLowerBound!(lowerBound::T, nadirPoints::Vector{PairOfSolution}, l
 						
 						if studiedLowerBound.tail == nil(Solution) || studiedLowerBound.tail.tail.head != pairDomin.solR
 							
-							fig.savefig("SaveFig/LEBUG_$(compteur.value)-1.png")
-							close(fig)
-							
 							@assert false "J'en peux plus des bugs ! $(studiedLowerBound.tail.tail.head.y) - $(pairDomin.solR.y)"
 						end
 						
@@ -374,30 +330,20 @@ function updateLowerBound!(lowerBound::T, nadirPoints::Vector{PairOfSolution}, l
 				end
 			end
 			
->>>>>>> 9cc9520c8081e479775704998ed21b5bc4ca2d61
 		end
-
+		
 	end
-
+	
 	return nadirPoints
 
 end
 
 
 
-<<<<<<< HEAD
-function pruningTest(lowerBound::T, listPointsNadir::Vector{PairOfSolution}, subUpperBound::DualSet, verbose = true) where T<:LinkedList{Solution}
-
-	lowerBound == nil(Solution) && return infeasibility, Vector{PairOfSolution}()
-	lowerBound.tail == nil(Solution) && return optimality, Vector{PairOfSolution}()
-
-
-	domi = true
-=======
 function pruningTest(lowerBound::T, listPointsNadir::Vector{PairOfSolution}, subUpperBound::DualSet, verbose = false; compteur = nothing, avecLesFigures = false) where T<:LinkedList{Solution}
 
-	lowerBound == nil(Solution) && return infeasibility, Vector{PairOfSolution}()
-	lowerBound.tail == nil(Solution) && return optimality, Vector{PairOfSolution}()
+	lowerBound == nil(Solution) && return infeasibility, Vector{PairOfSolution}(), listPointsNadir
+	lowerBound.tail == nil(Solution) && return optimality, Vector{PairOfSolution}(), listPointsNadir
 	
 	if compteur != nothing && avecLesFigures
 		
@@ -427,27 +373,14 @@ function pruningTest(lowerBound::T, listPointsNadir::Vector{PairOfSolution}, sub
 	
 	
 	subIsDominated = true
->>>>>>> 9cc9520c8081e479775704998ed21b5bc4ca2d61
 	MyDude = Vector{PairOfSolution}()
+	dominatedPoints = Vector{PairOfSolution}()
 
 	for pairNadir in listPointsNadir
 
 		verbose && println("pairNadir : $pairNadir")
 		nadir = [pairNadir.solL.y[1], pairNadir.solR.y[2]]
 		nadirA = subUpperBound.A * nadir
-<<<<<<< HEAD
-
-		println("$nadirA - $(subUpperBound.b)")
-
-		iter = 1
-
-		nonDomiNadir = false
-
-		while iter <= length(subUpperBound.b) && !nonDomiNadir
-
-			nonDomiNadir = nonDomiNadir || nadirA[iter] > subUpperBound.b[iter]
-
-=======
 
 		iter = 1
 		
@@ -457,25 +390,21 @@ function pruningTest(lowerBound::T, listPointsNadir::Vector{PairOfSolution}, sub
 			
 			nadirInUpper = nadirInUpper && nadirA[iter] <= subUpperBound.b[iter]
 			
->>>>>>> 9cc9520c8081e479775704998ed21b5bc4ca2d61
 			iter += 1
 		end
 		if nadirInUpper
 			push!(MyDude, pairNadir)
+		else
+			push!(dominatedPoints, pairNadir)
 		end
-<<<<<<< HEAD
-
-		domi = domi && nonDomiNadir
-=======
 		
 		subIsDominated = subIsDominated && !nadirInUpper
->>>>>>> 9cc9520c8081e479775704998ed21b5bc4ca2d61
 	end
 
 	if subIsDominated
-		return dominance, Vector{PairOfSolution}()
+		return dominance, Vector{PairOfSolution}(), listPointsNadir
 	else
-		return none, MyDude
+		return none, MyDude, dominatedPoints
 	end
 
 end
@@ -485,7 +414,7 @@ function addVarAssignment!(assignment::Assignment, prob::Problem)
 	assignment.assign[assignment.assignEndIndex] = 1
 
 	assignment.weight += prob.weights[assignment.assignEndIndex]
-
+	
 	assignment.profit += prob.profits[1:end, assignment.assignEndIndex]
 	assignment
 end
@@ -506,22 +435,14 @@ function returnParentAssignment!(assignment::Assignment, prob::Problem)
 	assignment.assignEndIndex -= 1
 end
 
-<<<<<<< HEAD
-function branchAndBound!(lowerBound::T, prob::Problem, assignment::Assignment, nadirPointsToStudy::Vector{PairOfSolution}; M::Float64 = 1000., num::Int = 1) where T<:LinkedList{Solution}
-
-	println(num)
-
-=======
 function branchAndBound!(lowerBound::T, prob::Problem, assignment::Assignment, nadirPointsToStudy::Vector{PairOfSolution}; M::Float64 = 1000., num::Int = 1, compteur = nothing, avecLesFigures = false) where T<:LinkedList{Solution}
 	
 	compteur != nothing && (compteur.value += 1)
-	compteur != nothing && println(compteur.value)
 	
->>>>>>> 9cc9520c8081e479775704998ed21b5bc4ca2d61
 	subLowerBound = dichoSearch(prob, assignment, M = M) #Nathalie
 	subUpperBound = computeUpperBound(subLowerBound) #Lucas
 
-	prunedType, newNadirPoints = pruningTest(subLowerBound, nadirPointsToStudy, subUpperBound, compteur = compteur, avecLesFigures = avecLesFigures) #Nathalie
+	prunedType, newNadirPoints, dominatedNadir = pruningTest(subLowerBound, nadirPointsToStudy, subUpperBound, compteur = compteur, avecLesFigures = avecLesFigures) #Nathalie
 
 	#println("lowerBound : $(map(sol->sol.y, lowerBound))")
 	#println("nadirPoints : $(broadcast(pair->(pair.solL.y[1], pair.solR.y[2]), nadirPointsToStudy)), newNadirPoints : $(broadcast(pair->(pair.solL.y[1], pair.solR.y[2]), newNadirPoints))")
@@ -536,12 +457,18 @@ function branchAndBound!(lowerBound::T, prob::Problem, assignment::Assignment, n
 
 		if testAddVar
 			addVarAssignment!(assignment, prob) #Lucas
-			branchAndBound!(lowerBound, prob, assignment, newNadirPoints, M = M, num = num + 1, compteur = compteur, avecLesFigures = avecLesFigures) #Lucas
+			newNadirPoints = branchAndBound!(lowerBound, prob, assignment, newNadirPoints, M = M, num = num + 1, compteur = compteur, avecLesFigures = avecLesFigures) #Lucas
 		end
 		removeVarAssignment!(assignment, prob, testAddVar) #Lucas
-		branchAndBound!(lowerBound, prob, assignment, newNadirPoints, M = M, num = num + 1, compteur = compteur, avecLesFigures = avecLesFigures) #Lucas
+		newNadirPoints = branchAndBound!(lowerBound, prob, assignment, newNadirPoints, M = M, num = num + 1, compteur = compteur, avecLesFigures = avecLesFigures) #Lucas
 
 		returnParentAssignment!(assignment, prob) #Lucas
+		return merge(newNadirPoints, dominatedNadir)
+		
+	elseif prunedType == optimality
+		return merge(newNadirPoints, dominatedNadir)
+	else
+		return nadirPointsToStudy
 	end
 
 end
@@ -558,6 +485,8 @@ function main(prob::Problem; withLinear::Bool = false, M::Float64 = 1000., avecL
 	nadirPoints = getNadirPoints(lowerBound) #Jules
 
 	branchAndBound!(lowerBound, prob, assignment, nadirPoints, M = M, compteur = compt, avecLesFigures = avecLesFigures) #Lucass
+
+	println("N° Assignement : $(compt.value)")
 
 	return lowerBound
 
