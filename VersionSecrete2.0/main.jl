@@ -85,7 +85,7 @@ function solve1OKP(prob::Problem, assignment::Assignment; withLinear::Bool = fal
 	termStatus = termination_status(model)
 
 	if termStatus == MOI.OPTIMAL
-		return Solution(X, [sum(X .* prob.profits[1,1:end])], sum(X .* prob.weights)), true
+		return Solution(X, [sum(X .* prob.profits[1,1:end])], sum(X .* prob.weights), true), true
 	elseif termStatus == MOI.INFEASIBLE
 		return Solution(), false
 	else
@@ -111,9 +111,14 @@ end
 function evaluate(prob::Problem, x::Vector{Float64})::Solution
     y = zeros(Float64, prob.nbObj)
     weight = 0
+	isInt = true
 
     for iterObj = 1:prob.nbObj
         for iter = 1:prob.nbVar
+			if !(x[iter] in [1, 0])
+				isInt = false
+			end
+
             if x[iter] > 0
                 y[iterObj] += prob.profits[iterObj, iter] * x[iter]
 				if iterObj == 1
@@ -123,24 +128,8 @@ function evaluate(prob::Problem, x::Vector{Float64})::Solution
         end
     end
 
-    return Solution(x, y, weight)
+    return Solution(x, y, weight, isInt)
 end
-
-
-function testSolInt(sol::Solution, verbose = false)
-
-    for iter in sol.x
-        if !(iter in [1,0])
-            verbose && println("Infeasable sol because x is not Int ($sol)")
-            return false
-        end
-    end
-
-    verbose && println("Integer solution : $sol")
-    return true
-
-end
-
 
 function linearRelax(prob::Problem, assignment::Assignment, verbose = true)
 
@@ -317,7 +306,7 @@ function updateLowerBound!(lowerBound::T, nadirPoints::Vector{PairOfSolution}, l
 
 	for sol in listOfPoint
 
-		if !withLinear || testSolInt(sol)
+		if !withLinear || sol.isInt
 
 			studiedLowerBound = lowerBound
 
@@ -419,7 +408,7 @@ function pruningTest(lowerBound::T, listPointsNadir::Vector{PairOfSolution}, sub
 
 	lowerBound == nil(Solution) && return infeasibility, Vector{PairOfSolution}(), listPointsNadir
 	if lowerBound.tail == nil(Solution)
-		if !withLinear || testSolInt(lowerBound.head)
+		if !withLinear || lowerBound.head.isInt
 			return optimality, Vector{PairOfSolution}(), listPointsNadir
 		end
 	end
@@ -496,7 +485,7 @@ function branchAndBound!(lowerBound::T, prob::Problem, assignment::Assignment, n
 
 	prunedType, newNadirPoints, dominatedNadir = pruningTest(subLowerBound, nadirPointsToStudy, subUpperBound, withLinear = withLinear, compteur = compteur) #Nathalie
 
-	compteur != nothing && println("$(compteur.value) - $prunedType")
+	# compteur != nothing && println("$(compteur.value) - $prunedType")
 
 	@assert (merge(newNadirPoints, dominatedNadir) == nadirPointsToStudy) "Et c'est le coup dur pour l'équipe de choc ! "
 
