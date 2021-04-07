@@ -63,18 +63,13 @@ function getNadirPoints(LB::T) where T<:LinkedList{Solution}
     return nadirPoints
 end
 
-function solve1OKP(prob::Problem, assignment::Assignment; withLinear::Bool = false, firstIter::Bool = false)
+function solve1OKP(prob::Problem, assignment::Assignment)
 	#Passer Lambda en paramètre
 	@assert prob.nbObj == 1 "solve1OKP only supports one objective function"
 
 	model = Model(GLPK.Optimizer)
 
-	if !withLinear || firstIter
-		x = @variable(model, x[1:(prob.nbVar-assignment.assignEndIndex)], Bin)
-	else
-		x = @variable(model, 0 <= x[1:(prob.nbVar-assignment.assignEndIndex)] <= 1)
-	end
-
+	x = @variable(model, x[1:(prob.nbVar-assignment.assignEndIndex)], Bin)
 	@constraint(model, Weights, sum(x .* prob.weights[(assignment.assignEndIndex+1):end]) + assignment.weight <= prob.maxWeight)
 	@objective(model, Max, sum(x .* prob.profits[1, (assignment.assignEndIndex+1):end]))
 
@@ -131,15 +126,16 @@ function evaluate(prob::Problem, x::Vector{Float64})::Solution
     return Solution(x, y, weight, isInt)
 end
 
-function linearRelax(prob::Problem, assignment::Assignment, verbose = true)
+function linearRelax(prob::Problem, assignment::Assignment, verbose = false)
 
     # INITIALIZATION OF THE PROBLEM
 	verbose && println("Assignement début linearRelax : $(assignment.assign)")
 
     # sorts the variable from the best utility to the worst
 	util = zeros(Float64, prob.nbVar-assignment.assignEndIndex)
-	for iter=assignment.assignEndIndex:prob.nbVar
-		util[iter] = prob.profits[iter] ./ prob.weights[iter]
+
+	for iter=assignment.assignEndIndex+1:prob.nbVar-assignment.assignEndIndex
+		util[iter] = prob.profits[iter+assignment.assignEndIndex] ./ prob.weights[iter+assignment.assignEndIndex]
 	end
 
     permList = sortperm(util, rev = true)
@@ -178,29 +174,37 @@ function linearRelax(prob::Problem, assignment::Assignment, verbose = true)
 
     verbose && println("final assign : ", linearSol[revPermList], " and remaining weight : ", primLeftWeight)
 
-    return evaluate(prob, append!(assignment.assign[1:assignment.assignEndIndex],linearSol[revPermList]))
+    return evaluate(prob, append!(Float64.(assignment.assign[1:assignment.assignEndIndex]),linearSol[revPermList]))
 end
 
 
-function dichoSearch(prob::Problem, assignment::Assignment; withLinear::Bool = false, firstIter::Bool = false, M::Float64 = 1000., verbose::Bool = false)
+function dichoSearch(prob::Problem, assignment::Assignment; withLinear::Bool = false, M::Float64 = 1000., verbose::Bool = true)
 
     lowerBound = nil(Solution)
 	toStudy = Vector{PairOfSolution}()
 
-    λ = [1, M]
-    leftSol, testLeft = solve1OKP(weightedRelax(prob, λ), assignment, withLinear = withLinear, firstIter = firstIter)
+	if !withLinear
+	    λ = [1, M]
+	    leftSol, testLeft = solve1OKP(weightedRelax(prob, λ), assignment)
+	    λ = [M, 1]
+	    rightSol, testRight = solve1OKP(weightedRelax(prob, λ), assignment)
+	else
+	    λ = [1, M]
+	    leftSol = linearRelax(weightedRelax(prob, λ), assignment)
+	    λ = [M, 1]
+	    rightSol = linearRelax(weightedRelax(prob, λ), assignment)
+	end
+
 	leftSol = evaluate(prob, leftSol.x)
-    λ = [M, 1]
-    rightSol, testRight = solve1OKP(weightedRelax(prob, λ), assignment, withLinear = withLinear, firstIter = firstIter)
 	rightSol = evaluate(prob, rightSol.x)
 
-	@assert testLeft && testRight "Bah écoute, on choppe des solutions infaisables, de mieux en mieux"
+	# @assert testLeft && testRight "Bah écoute, on choppe des solutions infaisables, de mieux en mieux"
 
 	verbose && println("Two found solutions : $leftSol && $rightSol")
 
     # In the event that the two solutions found are identical,
     # this solution is optimal and, thus, added to the lower bound
-    if leftSol.y == rightSol.y
+    if isapprox(leftSol.y, rightSol.y)
         lowerBound = cons(leftSol, lowerBound)
 		verbose && println("The two solutions are identical")
     else
@@ -225,10 +229,14 @@ function dichoSearch(prob::Problem, assignment::Assignment; withLinear::Bool = f
 			verbose && println("Found solutions : $leftSol && $rightSol")
 
 	        λ = [leftSol.y[2] - rightSol.y[2], rightSol.y[1] - leftSol.y[1]]
-	        midSol, testMid = solve1OKP(weightedRelax(prob, λ), assignment, withLinear = withLinear, firstIter = firstIter)
+			if !withLinear
+	        	midSol, testMid = solve1OKP(weightedRelax(prob, λ), assignment)
+			else
+				midSol = linearRelax(weightedRelax(prob, λ), assignment)
+			end
 			midSol = evaluate(prob, midSol.x)
 
-			@assert testMid "Bah écoute, on choppe des solutions infaisables, de mieux en mieux"
+			# @assert testMid "Bah écoute, on choppe des solutions infaisables, de mieux en mieux"
 
 			# if the solution dominates one of the other, it's added to the LB
 			if round(sum(λ .* midSol.y), digits=7) > round(sum(λ .* leftSol.y), digits=7)
@@ -395,6 +403,8 @@ function updateLowerBound!(lowerBound::T, nadirPoints::Vector{PairOfSolution}, l
 					end
 				end
 			end
+		else
+			println("Solution $sol not int")
 		end
 
 	end
@@ -480,12 +490,12 @@ function branchAndBound!(lowerBound::T, prob::Problem, assignment::Assignment, n
 
 	compteur != nothing && (compteur.value += 1)
 
-	subLowerBound = dichoSearch(prob, assignment, withLinear = withLinear, firstIter = firstIter, M = M) #Nathalie
+	subLowerBound = dichoSearch(prob, assignment, withLinear = withLinear, M = M) #Nathalie
 	subUpperBound = computeUpperBound(subLowerBound) #Lucas
 
 	prunedType, newNadirPoints, dominatedNadir = pruningTest(subLowerBound, nadirPointsToStudy, subUpperBound, withLinear = withLinear, compteur = compteur) #Nathalie
 
-	# compteur != nothing && println("$(compteur.value) - $prunedType")
+	compteur != nothing && println("$(compteur.value) - $prunedType")
 
 	@assert (merge(newNadirPoints, dominatedNadir) == nadirPointsToStudy) "Et c'est le coup dur pour l'équipe de choc ! "
 
@@ -522,7 +532,8 @@ function main(prob::Problem; withLinear::Bool = false, M::Float64 = 1000.)
 
 	compt = Compteur()
 
-	lowerBound = dichoSearch(prob, assignment, withLinear = withLinear, firstIter = true, M = M) #Nathalie
+	lowerBound = dichoSearch(prob, assignment, withLinear = false, M = M) #Nathalie
+	println("LB origin : $lowerBound")
 	nadirPoints = getNadirPoints(lowerBound) #Jules
 	branchAndBound!(lowerBound, prob, assignment, nadirPoints, withLinear = withLinear, M = M, compteur = compt) #Lucass
 
