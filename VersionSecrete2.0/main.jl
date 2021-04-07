@@ -406,37 +406,10 @@ end
 
 
 
-function pruningTest(lowerBound::T, listPointsNadir::Vector{PairOfSolution}, subUpperBound::DualSet, verbose = false; compteur = nothing, avecLesFigures = false) where T<:LinkedList{Solution}
+function pruningTest(lowerBound::T, listPointsNadir::Vector{PairOfSolution}, subUpperBound::DualSet, withLinear, verbose = false; compteur = nothing, avecLesFigures = false) where T<:LinkedList{Solution}
 
 	lowerBound == nil(Solution) && return infeasibility, Vector{PairOfSolution}(), listPointsNadir
 	lowerBound.tail == nil(Solution) && return optimality, Vector{PairOfSolution}(), listPointsNadir
-
-	if compteur != nothing && avecLesFigures
-
-		fig = figure()
-		ax = fig.add_subplot(111)
-
-		lengthLower = length(lowerBound)
-		solX = Vector{Float64}(undef, lengthLower)
-		solY = Vector{Float64}(undef, lengthLower)
-
-		iter = 1
-		for sol in lowerBound
-			solX[iter] = sol.y[1]
-			solY[iter] = sol.y[2]
-
-			iter += 1
-		end
-
-		ax.plot(solX, solY, "b-.")
-		ax.plot(broadcast(pair->pair.solL.y[1], listPointsNadir), broadcast(pair->pair.solR.y[2], listPointsNadir), "r.")
-		ax.set_xlabel("z_1(x)")
-		ax.set_ylabel("z_2(x)")
-		ax.grid(true)
-		fig.savefig("SaveFig/lowerBound_$(compteur.value).png")
-		close(fig)
-	end
-
 
 	subIsDominated = true
 	MyDude = Vector{PairOfSolution}()
@@ -515,7 +488,7 @@ function branchAndBound!(lowerBound::T, prob::Problem, assignment::Assignment; w
 	#println("nadirPoints : $(broadcast(pair->(pair.solL.y, pair.solR.y), nadirPointsToStudy)), newNadirPoints : $(broadcast(pair->(pair.solL.y, pair.solR.y), newNadirPoints))")
 
 	if prunedType == optimality || prunedType == none
-		newNadirPoints = updateLowerBound!(lowerBound, newNadirPoints, subLowerBound, compteur = compteur) #Lucas/Jules/Nathalie
+		newNadirPoints = updateLowerBound!(lowerBound, newNadirPoints, subLowerBound, withLinear, compteur = compteur) #Lucas/Jules/Nathalie
 	end
 
 	if prunedType == none && assignment.assignEndIndex < prob.nbVar
@@ -523,10 +496,10 @@ function branchAndBound!(lowerBound::T, prob::Problem, assignment::Assignment; w
 
 		if testAddVar
 			addVarAssignment!(assignment, prob) #Lucas
-			newNadirPoints = branchAndBound!(lowerBound, prob, assignment, newNadirPoints, M = M, num = num + 1, compteur = compteur, avecLesFigures = avecLesFigures) #Lucas
+			newNadirPoints = branchAndBound!(lowerBound, prob, assignment, withLinear, newNadirPoints, M = M, num = num + 1, compteur = compteur, avecLesFigures = avecLesFigures) #Lucas
 		end
 		removeVarAssignment!(assignment, prob, testAddVar) #Lucas
-		newNadirPoints = branchAndBound!(lowerBound, prob, assignment, newNadirPoints, M = M, num = num + 1, compteur = compteur, avecLesFigures = avecLesFigures) #Lucas
+		newNadirPoints = branchAndBound!(lowerBound, prob, assignment, withLinear, newNadirPoints, M = M, num = num + 1, compteur = compteur, avecLesFigures = avecLesFigures) #Lucas
 
 		returnParentAssignment!(assignment, prob) #Lucas
 		return merge(newNadirPoints, dominatedNadir)
