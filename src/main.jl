@@ -126,45 +126,6 @@ function solve1OKP(prob::Problem, λ::Vector{Float64}, assignment::Assignment)
 	end
 end
 
-#=
-function weightedRelax(prob::Problem, λ::Vector{Float64})::Problem
-
-	obj = zeros(Float64, 1, prob.nbVar)
-	for iter = 1:prob.nbVar
-		obj[iter] = sum( λ .* prob.profits[1:end, iter])
-	end
-
-	return Problem(
-			prob.nbVar,
-			1,
-			obj,
-			prob.weights,
-			prob.maxWeight)
-end
-
-function evaluate(prob::Problem, x::Vector{Float64})::Solution
-    y = zeros(Float64, prob.nbObj)
-    weight = 0
-    
-    isBinary = true
-
-    for iterObj = 1:prob.nbObj
-        for iter = 1:prob.nbVar
-            if x[iter] > 0
-                y[iterObj] += prob.profits[iterObj, iter] * x[iter]
-				if iterObj == 1
-                	weight += prob.weights[iter] * x[iter]
-				end
-            end
-            isBinary = isBinary && (x[iter] == 1. || x[iter] == 0.)
-        end
-    end
-
-    return Solution(x, y, weight, isBinary)
-end
-
-=#
-
 function dichoSearch(prob::Problem, assignment::Assignment; M::Float64 = 1000., withLinear::Bool = false, verbose::Bool = false, compteur = nothing)
 
     lowerBound = nil(Solution)
