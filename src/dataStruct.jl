@@ -68,6 +68,8 @@ mutable struct Solution
 	x::Vector{Float64}
 	y::Vector{Float64}
 	w::Float64
+	
+	isBinary::Bool
 end
 
 mutable struct Assignment
@@ -115,8 +117,16 @@ function Solution()
 	return Solution(
 			Vector{Float64}(), 
 			Vector{Float64}(),
-			0.
+			0.,
+			false
 			)
+end
+
+function Solution(x::Vector{Float64}, y::Vector{Float64}, w::Float64)
+	return Solution(x,
+					y,
+					w,
+					true)
 end
 
 function PairOfSolution()
