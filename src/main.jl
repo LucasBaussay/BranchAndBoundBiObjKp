@@ -2,7 +2,10 @@ using JuMP, GLPK
 using DataStructures
 using PyPlot
 
+const comboPath = joinpath(@__DIR__,"..","deps","libcombo.so")
+
 include("dataStruct.jl")
+include("parserCombo.jl")
 
 function addLowerBound!(lowerBound::T, sol::Solution) where T<:LinkedList{Solution}
 	test = false
@@ -136,14 +139,14 @@ function dichoSearch(prob::Problem, assignment::Assignment; M::Float64 = 1000., 
     if withLinear
     	leftSol, testLeft = solve1OKPLinear(prob, λ, assignment)
     else
-    	leftSol, testLeft = solve1OKP(prob, λ, assignment)
+    	leftSol, testLeft = solve_monoBinary(prob, λ, assignment)
 	end
     λ = [M, 1]
     
     if withLinear
     	rightSol, testRight = solve1OKPLinear(prob, λ, assignment)
     else
-    	rightSol, testRight = solve1OKP(prob, λ, assignment)
+    	rightSol, testRight = solve_monoBinary(prob, λ, assignment)
     end
 	
 	@assert testLeft && testRight "Bah écoute, on choppe des solutions infaisables, de mieux en mieux"
@@ -180,7 +183,7 @@ withLinear
 	        if withLinear
 				midSol, testMid = solve1OKPLinear(prob, λ, assignment)
 			else
-				midSol, testMid = solve1OKP(prob, λ, assignment)
+				midSol, testMid = solve_monoBinary(prob, λ, assignment)
 			end
 			
 			@assert testMid "Bah écoute, on choppe des solutions infaisables, de mieux en mieux"
