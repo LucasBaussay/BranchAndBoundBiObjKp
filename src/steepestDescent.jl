@@ -1,5 +1,4 @@
 
-include("dataStruct.jl")
 
 @enum Neighborhood KP_1_1 KP_1_2 KP_2_1 KP_0_1
 @enum Dominance DOMINATES DOMINATED NOTHING
@@ -272,10 +271,11 @@ function getTriangleIndex(solsInTriangles::Vector{Vector{Solution}}, sol::Soluti
         minZ1 = solsInTriangles[i][1].y[1]
         maxZ1 = solsInTriangles[i][2].y[1]
         if sol.y[1] >= minZ1 && sol.y[1] <= maxZ1
-            return i
+            return i,true
         end
     end
-    @assert false "No triangle is fitting the solution"
+    return 0,false
+    #@assert false "No triangle is fitting the solution"
 end
 
 function secureList(solsInTriangles::Vector{Vector{Solution}})
@@ -397,43 +397,48 @@ function descentNeighborhood(sol::Solution, consecutiveSet::Vector{PairOfSolutio
         sol = updateSolByKP(sol,bestKP,neighborhood,prob)
         push!(allSolsI, Solution(copy(sol.x),copy(sol.y),sol.w))
         # test if the solution should be added to solsInTriangles and if some old ones should be deleted
-        indexTriangle = getTriangleIndex(solsInTriangles,sol)
-        for i in 1:length(solsInTriangles[indexTriangle])
-            if solsInTriangles[indexTriangle][i].y == sol.y # the solution is not new
-                finished = true
-                break
-            end
-        end
+        indexTriangle,triangleFound = getTriangleIndex(solsInTriangles,sol)
+        if triangleFound
+		    for i in 1:length(solsInTriangles[indexTriangle])
+		        if solsInTriangles[indexTriangle][i].y == sol.y # the solution is not new
+		            finished = true
+		            break
+		        end
+		    end
 
-        if !finished
-            push!(solsInTriangles[indexTriangle],sol)
-            improved = true
-            secureList(solsInTriangles)
-        end
+		    if !finished
+		        push!(solsInTriangles[indexTriangle],sol)
+		        improved = true
+		        secureList(solsInTriangles)
+		    end
 
-        if finished
-            bestKP[1] = 0
-        elseif neighborhood == KP_1_1
-            if steepest
-                bestKP,tEval, tFun = bestKP11(sol,consecutiveSet,prob,tEval,tFun,fastEvaluate=fastEvaluate)
-            else
-                bestKP = firstKP11(sol,consecutiveSet,prob,fastEvaluate=fastEvaluate)
-            end
-        elseif neighborhood == KP_0_1
-            if steepest
-                bestKP = bestKP01(sol,consecutiveSet,prob,fastEvaluate=fastEvaluate)
-            else
-                bestKP = firstKP01(sol,consecutiveSet,prob,fastEvaluate=fastEvaluate)
-            end
-        elseif neighborhood == KP_1_2
-            if steepest
-                bestKP = bestKP12(sol,consecutiveSet,prob,fastEvaluate=fastEvaluate)
-            else
-                bestKP = firstKP12(sol,consecutiveSet,prob,fastEvaluate=fastEvaluate)
-            end
-        else
-            @assert false "Unknwon neighborhood"
-        end
+		    if finished
+		        bestKP[1] = 0
+		    elseif neighborhood == KP_1_1
+		        if steepest
+		            bestKP,tEval, tFun = bestKP11(sol,consecutiveSet,prob,tEval,tFun,fastEvaluate=fastEvaluate)
+		        else
+		            bestKP = firstKP11(sol,consecutiveSet,prob,fastEvaluate=fastEvaluate)
+		        end
+		    elseif neighborhood == KP_0_1
+		        if steepest
+		            bestKP = bestKP01(sol,consecutiveSet,prob,fastEvaluate=fastEvaluate)
+		        else
+		            bestKP = firstKP01(sol,consecutiveSet,prob,fastEvaluate=fastEvaluate)
+		        end
+		    elseif neighborhood == KP_1_2
+		        if steepest
+		            bestKP = bestKP12(sol,consecutiveSet,prob,fastEvaluate=fastEvaluate)
+		        else
+		            bestKP = firstKP12(sol,consecutiveSet,prob,fastEvaluate=fastEvaluate)
+		        end
+		    else
+		        @assert false "Unknwon neighborhood"
+		    end
+	    else
+	    	improved = false
+	    	bestKP[1] = 0
+	    end
     end
 
     #println("tEval = $tEval")
@@ -447,14 +452,14 @@ function descent(sol::Solution, consecutiveSet::Vector{PairOfSolution}, neighbor
     cptGlobal = zeros(Int,length(neighborhoods))
     improving = false
     for i in 1:length(neighborhoods)
-        sol, cpt, improved = descentNeighborhood(sol,consecutiveSet,neighborhoods[i],prob,allSolsI,solsInTriangles,steepest=steepest,fastEvaluate=fastEvaluate)
+        sol, cpt, improved = descentNeighborhood(sol,consecutiveSet,neighborhoods[i],prob,allSolsI,solsInTriangles,steepest=steepest, fastEvaluate=fastEvaluate)
         cptGlobal[i] += cpt
         improving = improving || improved
     end
 
     #println("   <cptGlobal = $cptGlobal>")
 
-    return sol
+    return sol, improving
 end
 
 function improveLowerBoundSet(lowerBoundSet::Vector{Solution},consecutiveSet::Vector{PairOfSolution},prob::Problem;steepest = true, fastEvaluate = true, neighborhoods = [KP_1_1])
@@ -520,9 +525,9 @@ function improveLowerBoundSet(lowerBoundSet::Vector{Solution},consecutiveSet::Ve
         lb = nil(Solution)
         lb = cons(solsClean[length(solsClean)][2],lb)
 
-        for i in 1:length(solsClean)
+        #=for i in 1:length(solsClean)
             print(solsClean[i])
-        end
+        end=#
 
         lbVect = Vector{Solution}()
 
@@ -546,7 +551,7 @@ function improveLowerBoundSet(lowerBoundSet::Vector{Solution},consecutiveSet::Ve
         lb = cons(lbVect[length(lbVect)],lb)
 
         for i in length(lbVect)-1:-1:1
-            lb = cons(lbVect[i],lb)
+            lb = 	cons(lbVect[i],lb)
         end
 
         nadirPoints = getNadirPoints(lb) #Jules

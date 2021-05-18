@@ -64,6 +64,18 @@ function Problem(fname::String)
 					)
 end
 
+function Problem(nbVar::Int)
+	weights = rand(1:50, nbVar)
+	maxWeight = Int(ceil(sum(weights) / 2.5))
+	return Problem(
+					nbVar,
+					2,
+					rand(1:50, 2, nbVar),
+					weights,
+					maxWeight <= 50 ? 51 : maxWeight, 
+					true)
+end
+
 mutable struct Solution
 	x::Vector{Float64}
 	y::Vector{Float64}
@@ -105,6 +117,16 @@ struct DualSet
 	b::Array{Float64, 1}
 end
 
+struct LambdaChange
+	index::Tuple{Int, Int}
+	value::Float64
+end
+
+struct AmeliorateLinear
+	solution::Solution
+	lambdaValue::Float64
+end
+
 mutable struct Compteur
 	value::Int
 end
@@ -142,3 +164,6 @@ Base.:(==)(sol1::Solution, sol2::Solution) = sol1.y == sol2.y
 Base.:(==)(pair1::PairOfSolution, pair2::PairOfSolution) = pair1.solL == pair2.solL && pair1.solR == pair2.solR
 
 Base.:(!=)(pair1::PairOfSolution, pair2::PairOfSolution) = !(pair1 == pair2)
+
+import Base.copy
+Base.copy(sol::Solution) = Solution(copy(sol.x), copy(sol.y), sol.w, sol.isBinary)

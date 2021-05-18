@@ -1,24 +1,46 @@
-using JuMP, GLPK
-using DataStructures
-using PyPlot
+
+using DataStructures, Random, JuMP, GLPK
 
 const comboPath = joinpath(@__DIR__,"..","deps","libcombo.so")
 
 include("dataStruct.jl")
 include("parserCombo.jl")
+include("steepestDescent.jl")
+
+function invertPerm(perm::Vector{Int})
+	n = 0
+	for item in perm
+		if item > n
+			n = item
+		end
+	end
+	
+	rev = Vector{Int}(undef, n)
+	for iter = 1:length(perm)
+		rev[perm[iter]] = iter
+	end
+	
+	return rev
+end
 
 function addLowerBound!(lowerBound::T, sol::Solution) where T<:LinkedList{Solution}
 	test = false
-	while lowerBound != nil(Solution)
-		if lowerBound.tail != nil(Solution) && !test && lowerBound.tail.head.y[1] > sol.y[1]
+	
+	while lowerBound.tail != nil(Solution) && !test
+	
+		if lowerBound.tail.head.y[1] > sol.y[1]
 			lowerBound.tail = cons(sol, lowerBound.tail)
 			test = true
-		elseif lowerBound.tail == nil(Solution) && !test
-			lowerBound.tail = cons(sol, nil(Solution))
-			test = true
-			@assert false "Normalement je ne passe pas là"
 		end
+		
 		lowerBound = lowerBound.tail
+		
+	end
+	
+	if !test
+		lowerBound.tail = cons(sol, nil(Solution))
+		
+		@assert false "Normalement je ne passe jamais par là\n $(sol.y)"
 	end
 end
 
@@ -91,7 +113,7 @@ function solve1OKPLinear(prob::Problem, λ::Vector{Float64}, assignment::Assignm
 		iter += 1
 	end
 	
-	if iter <= subLength && (prob.maxWeight - weight) != 0.
+	if iter <= subLength && (prob.maxWeight - weight) > 0.
 		x[permList[iter]] = (prob.maxWeight - weight) / prob.weights[permList[iter]]
 		
 		profit += x[permList[iter]] * prob.profits[1:end, permList[iter]]
@@ -129,25 +151,65 @@ function solve1OKP(prob::Problem, λ::Vector{Float64}, assignment::Assignment)
 	end
 end
 
-function dichoSearch(prob::Problem, assignment::Assignment; M::Float64 = 1000., withLinear::Bool = false, verbose::Bool = false, compteur = nothing)
+function dichoSearch(prob::Problem, assignment::Assignment; withFirstConvex::Bool = false, pointsAlreadyCompute = nil(Solution), M::Float64 = 1000., withLinear::Bool = false, verbose::Bool = false, compteur = nothing, linearAmelioration::Bool = false, solutionList::Union{Nothing, Vector{AmeliorateLinear}} = nothing) where T <: LinkedList{Solution}
 
-    lowerBound = nil(Solution)
+    lowerBound = copy(pointsAlreadyCompute)
 	toStudy = Vector{PairOfSolution}()
 
     λ = [1, M]
     
-    if withLinear
-    	leftSol, testLeft = solve1OKPLinear(prob, λ, assignment)
-    else
-    	leftSol, testLeft = solve_monoBinary(prob, λ, assignment)
+    verbose && println("\n $(broadcast(sol->sol.solution.y, solutionList))")
+    verbose && println(" $(broadcast(sol->sol.lambdaValue, solutionList))\n")
+    
+    if withFirstConvex
+    	
+    	leftSol, testLeft = solve1OKP(prob, λ, assignment)
+    	
+    elseif linearAmelioration
+    	
+    	lambdaValue = λ[1] / sum(λ)
+    	
+    	iter = 1
+    	while lambdaValue < solutionList[iter].lambdaValue && iter < length(solutionList)
+    		iter += 1
+    	end
+    	
+    	leftSol, testLeft = copy(solutionList[iter].solution), true
+	else
+		
+		if withLinear
+			leftSol, testLeft = solve1OKPLinear(prob, λ, assignment)
+		else
+			leftSol, testLeft = solve_monoBinary(prob, λ, assignment)
+		end
+	
 	end
+	
     λ = [M, 1]
     
-    if withLinear
-    	rightSol, testRight = solve1OKPLinear(prob, λ, assignment)
-    else
-    	rightSol, testRight = solve_monoBinary(prob, λ, assignment)
-    end
+     if withFirstConvex
+    	
+    	rightSol, testRight = solve1OKP(prob, λ, assignment)
+    	
+    elseif linearAmelioration
+    	
+    	lambdaValue = λ[1] / sum(λ)
+    	
+    	iter = 1
+    	while iter <= length(solutionList) && lambdaValue < solutionList[iter].lambdaValue
+    		iter += 1
+    	end
+    	
+    	rightSol, testRight = copy(solutionList[iter].solution), true
+	else
+		
+		if withLinear
+			rightSol, testRight = solve1OKPLinear(prob, λ, assignment)
+		else
+			rightSol, testRight = solve_monoBinary(prob, λ, assignment)
+		end
+	
+	end
 	
 	@assert testLeft && testRight "Bah écoute, on choppe des solutions infaisables, de mieux en mieux"
 
@@ -155,41 +217,78 @@ function dichoSearch(prob::Problem, assignment::Assignment; M::Float64 = 1000., 
 
     # In the event that the two solutions found are identical,
     # this solution is optimal and, thus, added to the lower bound
-    if round.(leftSol.y, digits = 7) == round.(rightSol.y, digits = 7)
+    if round.(leftSol.y, digits = 7) - round.(rightSol.y, digits = 7) < 0.00001
         lowerBound = cons(leftSol, lowerBound)
 		verbose && println("The two solutions are identical")
     else
 		# lowerBound doit être trié
 		# A REVOIR - C'est fait :P
-		lowerBound = cons(leftSol, cons(rightSol, nil(Solution)))
+		
+		if pointsAlreadyCompute == nil(Solution) || pointsAlreadyCompute.head != leftSol
+			lowerBound = cons(leftSol, lowerBound)
+		end
+		
+		tmpLowerBound = lowerBound
+		while tmpLowerBound.tail != nil(Solution)
+			push!(toStudy, PairOfSolution(tmpLowerBound.head, tmpLowerBound.tail.head))
+			tmpLowerBound = tmpLowerBound.tail
+		end
+		
+		if tmpLowerBound.head != rightSol
+			tmpLowerBound.tail = cons(rightSol, nil(Solution))
+			push!(toStudy, PairOfSolution(tmpLowerBound.head, rightSol))
+		end
 
-		verbose && println("LB = $lowerBound")
-withLinear
-        push!(toStudy, PairOfSolution(leftSol, rightSol))
+		verbose && println("pointsAlreadyCompute = $(map(sol->sol.y, pointsAlreadyCompute))") #Aled
 
-		verbose && println("toStudy origin: $toStudy")
+		#verbose && println("toStudy origin: $toStudy")
 
 		#while some pairs of solutions are found by the dichotomic search, we keep going
         while toStudy != []
-
+			verbose && println("LB = $(map(sol->sol.y, lowerBound))")
 			currPair = pop!(toStudy)
-			verbose && println("toStudy : $toStudy")
+			#verbose && println("toStudy : $toStudy")
 			leftSol = currPair.solL
 			rightSol = currPair.solR
 
-			verbose && println("Found solutions : $(leftSol) && $(rightSol)")
+			verbose && println("Found solutions : $(leftSol.y) && $(rightSol.y)")
 
 	        λ = [leftSol.y[2] - rightSol.y[2], rightSol.y[1] - leftSol.y[1]]
-	        if withLinear
-				midSol, testMid = solve1OKPLinear(prob, λ, assignment)
+	        if withFirstConvex
+				
+				midSol, testMid = solve1OKP(prob, λ, assignment)
+				
+			elseif linearAmelioration
+				
+				lambdaValue = λ[1] / sum(λ)
+				
+				iter = 1
+				while iter <= length(solutionList) && lambdaValue < solutionList[iter].lambdaValue
+					iter += 1
+				end
+				
+				midSol, testMid = copy(solutionList[iter].solution), true
+				testMid = true
+				
+				
 			else
-				midSol, testMid = solve_monoBinary(prob, λ, assignment)
+				
+				if withLinear
+					midSol, testMid = solve1OKPLinear(prob, λ, assignment)
+				else
+					midSol, testMid = solve_monoBinary(prob, λ, assignment)
+				end
+			
 			end
+			
+			verbose && println("Found solution : $(midSol.y)")
 			
 			@assert testMid "Bah écoute, on choppe des solutions infaisables, de mieux en mieux"
 
 			# if the solution dominates one of the other, it's added to the LB
-			if round(sum(λ .* midSol.y), digits = 7) > round(sum(λ .* rightSol.y), digits = 7)
+			if round(sum(λ .* midSol.y), digits = 7) - round(sum(λ .* rightSol.y), digits = 7) > 0.00001
+				verbose && println("It ameliorates")
+				verbose && println("LB = $(map(sol->sol.y, lowerBound))")
 				addLowerBound!(lowerBound, midSol)
 				push!(toStudy, PairOfSolution(leftSol, midSol))
 				push!(toStudy, PairOfSolution(midSol, rightSol))
@@ -261,7 +360,7 @@ function dominate(sol::Solution, pair::PairOfSolution)
 	return sol.y[1] >= (pair.solL.y[1] + 1) && sol.y[2] >= (pair.solR.y[2]+1)
 end
 
-function updateLowerBound!(lowerBound::T, nadirPoints::Vector{PairOfSolution}, listOfPoint::LinkedList{Solution}; compteur = nothing, withLinear = withLinear) where T<:LinkedList{Solution}
+function updateLowerBound!(lowerBound::T, nadirPoints::Vector{PairOfSolution}, listOfPoint::LinkedList{Solution}; compteur = nothing, withLinear = false) where T<:LinkedList{Solution}
 
 	
 	for sol in listOfPoint
@@ -456,12 +555,291 @@ function returnParentAssignment!(assignment::Assignment, prob::Problem)
 	assignment.assignEndIndex -= 1
 end
 
-function branchAndBound!(lowerBound::T, prob::Problem, assignment::Assignment, nadirPointsToStudy::Vector{PairOfSolution}; M::Float64 = 1000., num::Int = 1, compteur = nothing, avecLesFigures = false, withLinear::Bool = false) where T<:LinkedList{Solution}
+function computeAlreadyPoints(subLowerBound::T, index::Int, value::Int) where T <: LinkedList{Solution}
+	
+	newList = nil(Solution)
+	solInNewList = nil(Solution)
+	testFirstVarIn = false
+	
+	while subLowerBound != nil(Solution)
+		if !testFirstVarIn && subLowerBound.head.x[index] == value
+			testFirstVarIn = true
+			newList = cons(subLowerBound.head, nil(Solution))
+			solInNewList = newList
+		elseif subLowerBound.head.x[index] == value
+			solInNewList.tail = cons(subLowerBound.head, nil(Solution))
+			solInNewList = solInNewList.tail
+		end
+		
+		subLowerBound = subLowerBound.tail
+	end
+	
+	return newList
+
+end
+
+
+function linearPretreatment(permObjBis::Vector{Int}, permLambda::Vector{Int}, lambdaList::Vector{LambdaChange}, indEndLambdaList::Int, prob::Problem, assignment::Assignment)
+
+	permObj = permObjBis[1:end]
+	revPermObj = invertPerm(permObj)
+	
+	solutionList = Vector{AmeliorateLinear}(undef, indEndLambdaList+1)
+	indEndSolutionList = 1
+	
+	nbVar = prob.nbVar - assignment.assignEndIndex
+	
+	
+	indSol = 0
+	weight = assignment.weight
+	profit = assignment.profit[1:end]
+	#=x = Vector{Float64}(undef, prob.nbVar)
+	for iter = 1:prob.nbVar
+		if assignment.assign[iter] == -1
+			x[iter] = 0.
+		else
+			x[iter] = assignment.assign[iter]
+		end
+	end=#
+	x = Float64.(assignment.assign[1:end])
+	isBinary = true
+	while indSol < nbVar && weight < prob.maxWeight
+		indSol += 1
+		if weight + prob.weights[permObj[indSol]] <= prob.maxWeight
+			x[permObj[indSol]] = 1.
+			profit += prob.profits[1:end, permObj[indSol]]
+			weight += prob.weights[permObj[indSol]]
+		else
+			x[permObj[indSol]] = (prob.maxWeight - weight)/prob.weights[permObj[indSol]]
+			weight = prob.maxWeight
+			profit += x[permObj[indSol]] * prob.profits[1:end, permObj[indSol]]
+			isBinary = false
+		end
+		
+	end
+	
+	if (x[permObj[indSol]] == 1.)
+		indSol += 1
+	end
+	
+	indSol == 0 ? indSol = 1 : nothing
+	indSol == nbVar+1 ? indSol = nbVar : nothing
+	
+	sol = Solution(copy(x), copy(profit), weight, isBinary)
+	
+	solutionList[indEndSolutionList] = AmeliorateLinear(sol, indEndLambdaList >= 1 ? lambdaList[permLambda[1]].value : 0.)
+	
+	
+	for indLambda = 1:indEndLambdaList
+		nextVal = indEndLambdaList >= (indLambda+1) ? lambdaList[permLambda[indLambda+1]].value : 0.
+		
+		index1 = revPermObj[lambdaList[permLambda[indLambda]].index[1]] #Indice dans la liste triée
+		index2 = revPermObj[lambdaList[permLambda[indLambda]].index[2]]
+		
+		if index2 < index1
+			index1, index2 = index2, index1
+		end
+		
+		permObj[index1], permObj[index2] = permObj[index2], permObj[index1]
+		revPermObj[permObj[index1]], revPermObj[permObj[index2]] = revPermObj[permObj[index2]], revPermObj[permObj[index1]]
+		
+		#Liste triée  -> Liste réelle : perm
+		#Liste réelle -> Liste triée  : revPerm
+		
+		if index1 < indSol
+		
+			if index2 < indSol
+				nothing
+			elseif index2 == indSol #IL EST VALIDE ++
+				floatPart = x[permObj[index1]]
+				
+				x[permObj[index1]] = 1.
+				profit += (1. - floatPart) * prob.profits[1:end, permObj[index1]]
+				weight += (1. - floatPart) * prob.weights[permObj[index1]]
+				
+				while weight > prob.maxWeight && indSol > 0
+					x[permObj[indSol]] = max(0., (prob.maxWeight - (weight - prob.weights[permObj[indSol]]))/prob.weights[permObj[indSol]])
+					
+					profit -= (1 - x[permObj[indSol]]) * prob.profits[1:end, permObj[indSol]]
+					weight -= (1 - x[permObj[indSol]]) * prob.weights[permObj[indSol]]
+					
+					if (x[permObj[indSol]] == 0.)
+						indSol -= 1
+					end
+					
+					indSol == 0 ? indSol = 1 : nothing
+				end
+				
+				
+				
+				if lambdaList[indLambda].value != nextVal
+					indEndSolutionList += 1
+					solutionList[indEndSolutionList] = AmeliorateLinear(Solution(copy(x), copy(profit), weight, isBinary), nextVal)
+				end
+			else #Valide ++
+				
+				x[permObj[index1]], x[permObj[index2]] = 1., 0.
+				
+				profit += prob.profits[1:end, permObj[index1]] - prob.profits[1:end, permObj[index2]]
+				weight += prob.weights[permObj[index1]] - prob.weights[permObj[index2]]
+				
+				if weight > prob.maxWeight
+				
+					profit -= x[permObj[indSol]] * prob.profits[1:end, permObj[indSol]]
+					weight -= x[permObj[indSol]] * prob.weights[permObj[indSol]]
+					x[permObj[indSol]] = 1.
+					profit += prob.profits[1:end, permObj[indSol]]
+					weight += prob.weights[permObj[indSol]]
+					
+					while indSol <= nbVar && weight > prob.maxWeight && indSol > 0
+						
+						x[permObj[indSol]] = max(0., (prob.maxWeight - (weight - prob.weights[permObj[indSol]]))/prob.weights[permObj[indSol]])
+						profit -= (1. - x[permObj[indSol]]) * prob.profits[1:end, permObj[indSol]]
+						weight -= (1. - x[permObj[indSol]]) * prob.weights[permObj[indSol]]
+						
+						if (x[permObj[indSol]] == 0.)
+							indSol -= 1
+						end
+					end
+					
+					indSol == 0 ? indSol = 1 : nothing
+					
+					isBinary = (x[permObj[indSol]] == 1. || x[permObj[indSol]] == 0.)
+					
+					if lambdaList[indLambda].value != nextVal
+						indEndSolutionList += 1
+						solutionList[indEndSolutionList] = AmeliorateLinear(Solution(copy(x), copy(profit), weight, isBinary), nextVal)
+					end
+					
+				elseif weight < prob.maxWeight
+					
+					profit -= x[permObj[indSol]] * prob.profits[1:end, permObj[indSol]]
+					weight -= x[permObj[indSol]] * prob.weights[permObj[indSol]]
+					x[permObj[indSol]] = 0.
+					
+					while indSol <= nbVar && weight < prob.maxWeight && indSol > 0
+						x[permObj[indSol]] = min(1., (prob.maxWeight - (weight - prob.weights[permObj[indSol]]))/prob.weights[permObj[indSol]])
+						profit += x[permObj[indSol]] * prob.profits[1:end, permObj[indSol]]
+						weight += x[permObj[indSol]] * prob.weights[permObj[indSol]]
+						
+						if (x[permObj[indSol]] == 1.)
+							indSol += 1
+						end
+					end
+					
+					indSol == nbVar+1 ? indSol = nbVar : nothing
+					
+					isBinary = (x[permObj[indSol]] == 1. || x[permObj[indSol]] == 0.)
+					
+					if lambdaList[indLambda].value != nextVal
+						indEndSolutionList += 1
+						solutionList[indEndSolutionList] = AmeliorateLinear(Solution(copy(x), copy(profit), weight, isBinary), nextVal)
+					end
+					
+				else
+					nothing
+				end
+				
+			end
+		
+		elseif index1 == indSol
+		
+			floatPart = x[permObj[index2]]
+		
+			x[permObj[index1]], x[permObj[index2]] = 1., 0.
+			profit += prob.profits[1:end, permObj[index1]] - floatPart * prob.profits[1:end, permObj[index2]]
+			weight += prob.weights[permObj[index1]] - floatPart * prob.weights[permObj[index2]]
+			####################""
+			
+			if weight > prob.maxWeight
+				
+				while weight > prob.maxWeight && indSol > 0
+					x[permObj[indSol]] = max(0., (prob.maxWeight - (weight - prob.weights[permObj[indSol]]))/prob.weights[permObj[indSol]])
+					profit -= (1. - x[permObj[indSol]]) * prob.profits[1:end, permObj[indSol]]
+					weight -= (1. - x[permObj[indSol]]) * prob.weights[permObj[indSol]]
+					
+					if (x[permObj[indSol]] == 0.)
+						indSol -= 1
+					end
+				end
+				
+				indSol == 0 ? indSol = 1 : nothing
+				
+				isBinary = (x[permObj[indSol]] == 1. || x[permObj[indSol]] == 0.)
+				
+				if lambdaList[indLambda].value != nextVal
+					indEndSolutionList += 1
+					solutionList[indEndSolutionList] = AmeliorateLinear(Solution(copy(x), copy(profit), weight, isBinary), nextVal)
+				end
+				
+			elseif weight < prob.maxWeight
+				
+				indSol += 1
+				
+				while indSol <= nbVar && weight < prob.maxWeight
+					x[permObj[indSol]] = min(1., (prob.maxWeight - (weight - prob.weights[permObj[indSol]]))/prob.weights[permObj[indSol]])
+					profit += x[permObj[indSol]] * prob.profits[1:end, permObj[indSol]]
+					weight += x[permObj[indSol]] * prob.weights[permObj[indSol]]
+					
+					if (x[permObj[indSol]] == 1.)
+						indSol += 1
+					end
+				end
+				
+				indSol == nbVar+1 ? indSol = nbVar : nothing
+				
+				isBinary = (x[permObj[indSol]] == 1. || x[permObj[indSol]] == 0.)
+				
+				if lambdaList[indLambda].value != nextVal
+					indEndSolutionList += 1
+					solutionList[indEndSolutionList] = AmeliorateLinear(Solution(copy(x), copy(profit), weight, isBinary), nextVal)
+				end
+				
+			else
+				nothing
+			end
+		
+		else
+			nothing
+		end
+		
+	end
+		
+	return solutionList[1:indEndSolutionList]
+	
+end
+
+
+function branchAndBound!(lowerBound::T, prob::Problem, assignment::Assignment, nadirPointsToStudy::Vector{PairOfSolution}, permObj, permLambda, lambdaList, indEndLambdaList::Int; withFirstConvex::Bool = false, pointsAlreadyCompute = nil(Solution), M::Float64 = 1000., num::Int = 1, compteur = nothing, avecLesFigures = false, withLinear::Bool = false, linearAmelioration::Bool = false, timeMax = nothing, start = nothing) where T<:LinkedList{Solution}
+	
+	if timeMax != nothing && time() - start > timeMax
+		return nadirPointsToStudy, false
+	end
+	testTime = false
 	
 	compteur != nothing && (compteur.value += 1)
+	compteur.value%10000 == 0 && println(compteur.value)
+	
+	solutionList = nothing
+	if linearAmelioration 
+	
+		if assignment.assignEndIndex != prob.nbVar
+			
+			solutionList = linearPretreatment(permObj, permLambda, lambdaList, indEndLambdaList, prob, assignment)
+		else
+			solutionList = [AmeliorateLinear(Solution(assignment.assign[1:end], assignment.profit[1:end], assignment.weight, true), 0.)]
+		end
+		
+		for iter = 1:length(solutionList)
+			println("$(solutionList[iter].solution.y) - $(solutionList[iter].solution.x) - $(solutionList[iter].lambdaValue)")
+		end
+		println()
+		
+	end
 	
 	
-	subLowerBound = dichoSearch(prob, assignment, withLinear = withLinear, M = M, compteur = compteur) #Nathalie	
+	
+	subLowerBound = dichoSearch(prob, assignment, withFirstConvex = withFirstConvex, pointsAlreadyCompute = pointsAlreadyCompute, withLinear = withLinear, M = M, compteur = compteur, linearAmelioration = linearAmelioration, solutionList = solutionList) #Nathalie	
 	subUpperBound = computeUpperBound(subLowerBound) #Lucas
 
 	prunedType, newNadirPoints, dominatedNadir = pruningTest(subLowerBound, nadirPointsToStudy, subUpperBound, compteur = compteur, avecLesFigures = avecLesFigures) #Nathalie
@@ -473,6 +851,7 @@ function branchAndBound!(lowerBound::T, prob::Problem, assignment::Assignment, n
 	#println("nadirPoints : $(broadcast(pair->(pair.solL.y[1], pair.solR.y[2]), nadirPointsToStudy)), newNadirPoints : $(broadcast(pair->(pair.solL.y[1], pair.solR.y[2]), newNadirPoints))")
 	#println("nadirPoints : $(broadcast(pair->(pair.solL.y, pair.solR.y), nadirPointsToStudy)), newNadirPoints : $(broadcast(pair->(pair.solL.y, pair.solR.y), newNadirPoints))")
 
+
 	if prunedType == none
 		newNadirPoints = updateLowerBound!(lowerBound, newNadirPoints, subLowerBound, withLinear = withLinear, compteur = compteur) #Lucas/Jules/Nathalie
 	elseif prunedType == optimality
@@ -482,49 +861,310 @@ function branchAndBound!(lowerBound::T, prob::Problem, assignment::Assignment, n
 	if prunedType == none && assignment.assignEndIndex < prob.nbVar
 		testAddVar = (assignment.weight + prob.weights[assignment.assignEndIndex + 1] <= prob.maxWeight)
 
+		newPermObj = nothing
+		newPermLambda = nothing
+		newIndEndLambdaList = 0
+
+		if linearAmelioration
+			newPermObj = filter(x->x!=assignment.assignEndIndex+1, permObj)
+			
+			newPermLambda = filter( x-> lambdaList[x].index[1] != assignment.assignEndIndex+1 && lambdaList[x].index[2] != assignment.assignEndIndex+1, permLambda)
+			newIndEndLambdaList = length(newPermLambda)
+		end
+
 		if testAddVar
 			addVarAssignment!(assignment, prob) #Lucas
-			newNadirPoints = branchAndBound!(lowerBound, prob, assignment, newNadirPoints, M = M, num = num + 1, withLinear = withLinear, compteur = compteur, avecLesFigures = avecLesFigures) #Lucas
+			pointsAlreadyCompute = computeAlreadyPoints(subLowerBound, assignment.assignEndIndex, 1)
+			newNadirPoints, testTime = branchAndBound!(lowerBound, 
+												prob, 
+												assignment, 
+												newNadirPoints, 
+												newPermObj, 
+												newPermLambda,
+												lambdaList,
+												newIndEndLambdaList, 
+												withFirstConvex = withFirstConvex,
+												pointsAlreadyCompute = pointsAlreadyCompute, 
+												M = M, 
+												num = num + 1, 
+												withLinear = withLinear, 
+												compteur = compteur, 
+												avecLesFigures = avecLesFigures, 
+												linearAmelioration = linearAmelioration,
+												timeMax = timeMax,
+												start = start) #Lucas
 		end
 		removeVarAssignment!(assignment, prob, testAddVar) #Lucas
-		newNadirPoints = branchAndBound!(lowerBound, prob, assignment, newNadirPoints, M = M, num = num + 1, compteur = compteur, withLinear = withLinear, avecLesFigures = avecLesFigures) #Lucas
+		pointsAlreadyCompute = computeAlreadyPoints(subLowerBound, assignment.assignEndIndex, 0)
+		newNadirPoints, testTime = branchAndBound!(lowerBound, 
+											prob, 
+											assignment, 
+											newNadirPoints,  
+											newPermObj, 
+											newPermLambda,
+											lambdaList,
+											newIndEndLambdaList,
+											withFirstConvex = withFirstConvex,
+											pointsAlreadyCompute = pointsAlreadyCompute, 
+											M = M,
+											num = num + 1, 
+											compteur = compteur, 
+											withLinear = withLinear, 
+											avecLesFigures = avecLesFigures, 
+											linearAmelioration = linearAmelioration,
+											timeMax = timeMax,
+											start = start) #Lucas
 
 		returnParentAssignment!(assignment, prob) #Lucas
-		return merge(newNadirPoints, dominatedNadir)
+		return merge(newNadirPoints, dominatedNadir), (timeMax == nothing || time() - start < timeMax)
 		
 	elseif prunedType == optimality
-		return merge(newNadirPoints, dominatedNadir)
+		return merge(newNadirPoints, dominatedNadir), (timeMax == nothing || time() - start < timeMax)
 	else
-		return nadirPointsToStudy
+		return nadirPointsToStudy, (timeMax == nothing || time() - start < timeMax)
 	end
 
 end
 
-function main(prob::Problem; withLinear::Bool = false, M::Float64 = 1000., avecLesFigures::Bool = false)
+
+function initializeLinearPretreatment(prob::Problem)
+
+
+	ratio = zeros(Float64, 2, prob.nbVar)
+	lambdaList = Vector{LambdaChange}(undef, (prob.nbVar^2 - prob.nbVar))
+	indEndLambdaList = 0
+	
+	for iter = 1:prob.nbVar
+		ratio[1, iter] = prob.profits[1, iter] / prob.weights[iter]
+		ratio[2, iter] = prob.profits[2, iter] / prob.weights[iter]
+	end
+	
+	for iter = 1:prob.nbVar
+		for iter2 = 1:prob.nbVar
+			if iter2 > iter
+				value = (ratio[1, iter] - ratio[2, iter] - ratio[1, iter2] + ratio[2, iter2])
+				if value != 0.
+					val = (ratio[2, iter2] - ratio[2, iter]) / value
+					if val < 1 && val > 0
+						indEndLambdaList += 1
+						lambdaList[indEndLambdaList] = LambdaChange((iter, iter2), val) #Indice réel
+					end
+				end
+			end
+		end
+	end
+
+	permLambda = sortperm(lambdaList[1:indEndLambdaList], by = x->x.value, rev = true)
+	
+	permObj = sortperm(1:prob.nbVar, lt = (x, y) -> if ratio[1, x] == ratio[1, y]
+														isless(ratio[2, x], ratio[2, y])
+													else
+														isless(ratio[1, x], ratio[1, y])
+													end,
+													rev = true)
+													
+	return permObj, permLambda, lambdaList, indEndLambdaList
+													
+end
+
+function main(prob::Problem; withFirstConvex::Bool = false, withLinear::Bool = false, M::Float64 = 1000., avecLesFigures::Bool = false, linearAmelioration::Bool = false, timeMax = nothing, start = nothing, withHeuristic::Bool = true)
 
 	@assert prob.nbObj == 2 "This Branch and Bound supports only a Bio-objective problem"
 
 	assignment = Assignment(prob) #Nathalie
 
 	compt = Compteur()
+	
+	solutionList = nothing
+	permObj = nothing
+	permLambda = nothing
+	lambdaList = nothing
+	indEndLambdaList = 0
+	if linearAmelioration
+		permObj, permLambda, lambdaList, indEndLambdaList = initializeLinearPretreatment(prob)
+		solutionList = linearPretreatment(permObj, permLambda, lambdaList, indEndLambdaList, prob, assignment)
+	end
+	
+	lowerBound = dichoSearch(prob, assignment, M = M, compteur = compt, withFirstConvex = withFirstConvex) #Nathalie
+	
+	if withHeuristic
+		
+		n = length(lowerBound)
+		lowerBoundSet = Vector{Solution}(undef, n)
+		consecutiveSet = Vector{PairOfSolution}(undef, n-1)
+		
+		lowerBoundBis = lowerBound
+		iter = 1
+		while lowerBoundBis.tail != nil(Solution)
+			lowerBoundSet[iter] = lowerBoundBis.head
+			consecutiveSet[iter] = PairOfSolution(lowerBoundBis.head, lowerBoundBis.tail.head)
+			
+			lowerBoundBis = lowerBoundBis.tail
+			iter += 1
+		end
+		lowerBoundSet[iter] = lowerBoundBis.head
+		
+		println(lowerBoundSet)
+		println(consecutiveSet)
+	
+		lowerBound, tmp2 = improveLowerBoundSet(lowerBoundSet, consecutiveSet, prob)
+		
+	end
 
-	lowerBound = dichoSearch(prob, assignment, M = M, compteur = compt) #Nathalie
 	nadirPoints = getNadirPoints(lowerBound) #Jules
-
-	branchAndBound!(lowerBound, prob, assignment, nadirPoints, M = M, compteur = compt, avecLesFigures = avecLesFigures, withLinear = withLinear) #Lucass
+	
+	list, testTime = branchAndBound!(lowerBound, prob, assignment, nadirPoints, permObj, permLambda, lambdaList, indEndLambdaList, withFirstConvex = withFirstConvex, pointsAlreadyCompute = nil(Solution), M = M, compteur = compt, avecLesFigures = avecLesFigures, withLinear = withLinear, linearAmelioration = linearAmelioration, timeMax = timeMax, start = start) #Lucass
 
 	println("N° Assignement : $(compt.value)")
 
-	return lowerBound
+	return lowerBound, testTime, compt
 
 end
 
-function main(fname::String; withLinear::Bool = false, M::Float64 = 1000., avecLesFigures::Bool = false)
+function main(fname::String; withLinear::Bool = false, withFirstConvex::Bool = false, withHeuristic::Bool = true, M::Float64 = 1000., avecLesFigures::Bool = false, linearAmelioration::Bool = false)
 	prob = Problem(fname)
-	return main(prob, withLinear = withLinear, M = M, avecLesFigures = avecLesFigures)
+	return main(prob, withLinear = withLinear, withFirstConvex = withFirstConvex, withHeuristic = withHeuristic, M = M, avecLesFigures = avecLesFigures, linearAmelioration = linearAmelioration)
 end
 
-function main(;withLinear::Bool = false, M::Float64 = 1000., avecLesFigures::Bool = false)
+function main(;withLinear::Bool = false, withFirstConvex::Bool = false, withHeuristic::Bool = true, M::Float64 = 1000., avecLesFigures::Bool = false, linearAmelioration::Bool = false)
 	prob = Problem()
-	return main(prob, withLinear = withLinear, M = M, avecLesFigures = avecLesFigures)
+	return main(prob, withLinear = withLinear, withFirstConvex = withFirstConvex, withHeuristic = withHeuristic, M = M, avecLesFigures = avecLesFigures, linearAmelioration = linearAmelioration)
+end
+
+function experimentation(timeMax::Float64 = 600.)
+	
+	Random.seed!(123456)
+	
+	problems = Vector{Vector{Problem}}(undef, 11)
+	for nbVar = 50:10:150
+		instances = Vector{Problem}(undef, 5)
+		for iter = 1:5
+			instances[iter] = Problem(nbVar)
+		end
+		problems[Int(nbVar/10 - 4)] = copy(instances)
+	end
+	println(problems[3][2])
+	
+	println("Début ConvexeBase")
+	for instance in problems
+		
+		main(instance[1], withLinear = true, timeMax = 5., start = time())
+
+		println("$(instance[1].nbVar) : ")		
+
+		start = time()
+		iterInstance = 1
+		file = open("../Experimentation/LinearBase", "a")
+		while time() - start <= timeMax && iterInstance <= 5
+			
+			println("Instance n° $iterInstance - $(time()-start)")
+
+			prob = instance[iterInstance]
+		
+			startInstance = time()
+			lb, testTime, compt = main(prob, withLinear = true, timeMax = timeMax, start = start)
+			endInstance = time()
+			if time() - start < timeMax
+				write(file, "$(prob.nbVar);$iterInstance;$(endInstance-startInstance);$(compt.value)\n")
+			end
+			iterInstance += 1
+		end
+		close(file)
+	end
+	
+#=
+	println("Début : LinearBase")
+			
+	file = open("../Experimentation/LinearBase", "a")
+	for instance in problems
+		#instance = problems[3]
+		println("$(instance[1].nbVar) : ")
+		main(instance[1], withLinear = true, timeMax = 5., start = time())
+		
+		start = time()
+		iterInstance = 1
+	
+		while time() - start <= timeMax && iterInstance <= 5
+			println("Instance n°$iterInstance - $(time()-start)")
+			prob = instance[iterInstance]
+		
+			startInstance = time()
+			lb, testTime, compt = main(prob, withLinear = true, timeMax = timeMax, start = start)
+			endInstance = time()
+			if time() - start < timeMax
+				write(file, "$(prob.nbVar);$iterInstance;$(endInstance-startInstance);$(compt.value)\n")
+			end
+			iterInstance += 1
+		end
+	end
+	close(file)
+	
+	file = open("../Experimentation/ConvexBetter", "a")
+	for instance in problems
+	
+		main(instance[1], timeMax = 5., start = time())
+	
+		start = time()
+		iterInstance = 1
+	
+		while time() - start <= timeMax && iterInstance <= 5
+		
+			prob = instance[iterInstance]
+		
+			startInstance = time()
+			lb, testTime, compt = main(prob, timeMax = timeMax, start = start)
+			endInstance = time()
+			if time() - start < timeMax
+				write(file, "$(prob.nbVar);$iterInstance;$(endInstance-startInstance);$(compt.value)\n")
+			end
+			iterInstance += 1
+		end
+	end
+	close(file)
+	
+	file = open("../Experimentation/LinearBaseHeuristic", "a")
+	for instance in problems
+	
+		main(instance[1], withLinear = true, withHeuristic = true, timeMax = 5., start = time())
+	
+		start = time()
+		iterInstance = 1
+	
+		while time() - start <= timeMax && iterInstance <= 5
+		
+			prob = instance[iterInstance]
+		
+			startInstance = time()
+			lb, testTime, compt = main(prob, withHeuristic = true, withLinear = true, timeMax = timeMax, start = start)
+			endInstance = time()
+			if time() - start < timeMax
+				write(file, "$(prob.nbVar);$iterInstance;$(endInstance-startInstance);$(compt.value)\n")
+			end
+			iterInstance += 1
+		end
+	end
+	close(file)
+	
+	file = open("../Experimentation/ConvexBetterHeuristic", "a")
+	for instance in problems
+	
+		main(instance[1], withHeuristic = true, timeMax = 5., start = time())
+	
+		start = time()
+		iterInstance = 1
+	
+		while time() - start <= timeMax && iterInstance <= 5
+		
+			prob = instance[iterInstance]
+		
+			startInstance = time()
+			lb, testTime, compt = main(prob, withHeuristic = true, timeMax = timeMax, start = start)
+			endInstance = time()
+			if time() - start < timeMax
+				write(file, "$(prob.nbVar);$iterInstance;$(endInstance-startInstance);$(compt.value)\n")
+			end
+			iterInstance += 1
+		end
+	end
+	close(file)=#
 end
